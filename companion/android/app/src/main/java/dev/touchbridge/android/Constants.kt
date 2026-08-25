@@ -31,4 +31,5 @@ object Constants {
     const val PREFS_NAME = "touchbridge_prefs"
     const val PREF_PAIRED_MAC_ID = "paired_mac_id"
     const val PREF_PAIRED_MAC_NAME = "paired_mac_name"
+    const val PREF_DEVICE_ID = "device_id"
 }

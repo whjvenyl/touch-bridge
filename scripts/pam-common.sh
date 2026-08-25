@@ -19,6 +19,7 @@
 
 TB_PAM_DIR="${TB_PAM_DIR:-/etc/pam.d}"
 TB_PAM_LINE="auth       sufficient     pam_touchbridge.so"
+TB_PAM_LINE_SSH="auth       sufficient     pam_touchbridge.so ignore_ssh"
 
 _tb_info()  { echo -e "\033[0;32m[INFO]\033[0m $1"; }
 _tb_warn()  { echo -e "\033[1;33m[WARN]\033[0m $1"; }

@@ -5,6 +5,7 @@ struct SetupWizardView: View {
     @ObservedObject var state: MenuBarState
     @State private var patchSudo = true
     @State private var patchScreensaver = false
+    @State private var ignoreSSH = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -95,6 +96,12 @@ struct SetupWizardView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
 
+            Toggle(isOn: $ignoreSSH) {
+                Label("Skip when over SSH", systemImage: "terminal")
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+
             Text("Your admin password will be required. PAM configs are backed up before modification.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -109,7 +116,8 @@ struct SetupWizardView: View {
             Task {
                 await state.installSystem(
                     patchSudo: patchSudo,
-                    patchScreensaver: patchScreensaver
+                    patchScreensaver: patchScreensaver,
+                    ignoreSSH: ignoreSSH
                 )
             }
         } label: {

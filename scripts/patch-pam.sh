@@ -33,6 +33,18 @@ if [ ! -f "$PAM_LIB" ]; then
 fi
 _tb_info "Found PAM module: $PAM_LIB"
 
+# Ask about ignore_ssh
+echo ""
+echo "Skip TouchBridge when connected over SSH?"
+echo "  This prevents biometric prompts when you SSH into this Mac."
+echo "  (checks SSH_CLIENT, SSH_CONNECTION, SSH_TTY environment variables)"
+read -p "Enable ignore_ssh? [y/N] " -n 1 -r
+echo ""
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    TB_PAM_LINE="$TB_PAM_LINE_SSH"
+    _tb_info "ignore_ssh enabled — SSH sessions will fall through to password."
+fi
+
 tb_enable_sudo "prompt"
 tb_enable_screensaver "prompt"
 

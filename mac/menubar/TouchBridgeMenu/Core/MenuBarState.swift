@@ -123,7 +123,7 @@ class MenuBarState: ObservableObject {
     // MARK: - Install / Uninstall via privileged helper
 
     /// Install TouchBridge system components using the privileged helper.
-    func installSystem(patchSudo: Bool = true, patchScreensaver: Bool = false) async {
+    func installSystem(patchSudo: Bool = true, patchScreensaver: Bool = false, ignoreSSH: Bool = false) async {
         isInstalling = true
         installMessage = nil
 
@@ -147,7 +147,8 @@ class MenuBarState: ObservableObject {
             daemonPath: daemonPath,
             pamModulePath: pamPath,
             patchSudo: patchSudo,
-            patchScreensaver: patchScreensaver
+            patchScreensaver: patchScreensaver,
+            ignoreSSH: ignoreSSH
         )
 
         if success {
@@ -207,7 +208,8 @@ class MenuBarState: ObservableObject {
                 daemonPath: BinaryLocator.bundledDaemonPath ?? "",
                 pamModulePath: pamPath,
                 patchSudo: surface == "sudo",
-                patchScreensaver: surface == "screensaver"
+                patchScreensaver: surface == "screensaver",
+                ignoreSSH: false
             )
             if !ok {
                 installMessage = "Failed: \(msg)"
@@ -227,7 +229,8 @@ class MenuBarState: ObservableObject {
                         daemonPath: "",
                         pamModulePath: pamPath,
                         patchSudo: wantSudo,
-                        patchScreensaver: wantScreensaver
+                        patchScreensaver: wantScreensaver,
+                        ignoreSSH: false
                     )
                 }
             }

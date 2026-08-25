@@ -98,7 +98,8 @@ class HelperClient: ObservableObject {
     func install(daemonPath: String,
                  pamModulePath: String,
                  patchSudo: Bool,
-                 patchScreensaver: Bool) async -> (success: Bool, message: String) {
+                 patchScreensaver: Bool,
+                 ignoreSSH: Bool) async -> (success: Bool, message: String) {
         guard let proxy = await getProxy() else {
             return (false, "Helper not available")
         }
@@ -106,7 +107,8 @@ class HelperClient: ObservableObject {
             proxy.install(daemonPath: daemonPath,
                           pamModulePath: pamModulePath,
                           patchSudo: patchSudo,
-                          patchScreensaver: patchScreensaver) { success, message in
+                          patchScreensaver: patchScreensaver,
+                          ignoreSSH: ignoreSSH) { success, message in
                 continuation.resume(returning: (success, message))
             }
         }

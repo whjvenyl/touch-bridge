@@ -5,7 +5,7 @@
  * requests biometric authentication on the user's paired iOS device.
  *
  * PAM config line:
- *   auth  sufficient  pam_touchbridge.so [timeout=15]
+ *   auth  sufficient  pam_touchbridge.so [timeout=15] [ignore_ssh]
  *
  * If "sufficient", a successful TouchBridge auth skips the password prompt.
  * If TouchBridge fails (timeout, no device, etc.), PAM falls through to
@@ -104,6 +104,36 @@ static int parse_timeout(int argc, const char **argv)
 }
 
 /*
+ * Parse the ignore_ssh argument from PAM module arguments.
+ * When enabled, the module skips TouchBridge auth when invoked over SSH
+ * (checks SSH_CLIENT, SSH_CONNECTION, SSH_TTY env vars) and falls through
+ * to the next PAM module (typically password).
+ * Returns 1 if ignore_ssh is enabled, 0 otherwise.
+ */
+static int parse_ignore_ssh(int argc, const char **argv)
+{
+    for (int i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "ignore_ssh") == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * Check if the current session is an SSH session by examining environment
+ * variables set by sshd. Returns 1 if over SSH, 0 otherwise.
+ */
+static int is_ssh_session(void)
+{
+    /* sshd sets these in the PAM environment */
+    if (getenv("SSH_CLIENT") != NULL) return 1;
+    if (getenv("SSH_CONNECTION") != NULL) return 1;
+    if (getenv("SSH_TTY") != NULL) return 1;
+    return 0;
+}
+
+/*
  * Connect to the daemon's Unix domain socket.
  * Returns the socket fd on success, -1 on failure.
  */
@@ -183,6 +213,15 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 
     /* Parse timeout from module arguments */
     timeout_sec = parse_timeout(argc, argv);
+
+    /* Check ignore_ssh policy */
+    int ignore_ssh = parse_ignore_ssh(argc, argv);
+    if (ignore_ssh && is_ssh_session()) {
+        syslog(LOG_AUTH | LOG_INFO,
+            "pam_touchbridge: SSH session detected, ignore_ssh enabled — falling through for user=%s",
+            user);
+        return PAM_AUTH_ERR;
+    }
 
     syslog(LOG_AUTH | LOG_INFO,
         "pam_touchbridge: auth request for user=%s service=%s timeout=%d",

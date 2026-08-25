@@ -89,10 +89,26 @@ class MainActivity : FragmentActivity() {
                                     val signedNonce = signature.sign()
                                     viewModel.sendAuthResponse(challenge.challengeID, signedNonce)
                                 }
-                                
+
                                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                                     super.onAuthenticationError(errorCode, errString)
-                                    // Optionally log or show error
+                                    // Send error to daemon so it can resolve the pending challenge
+                                    // Error code 1001 = keyInvalidated (biometric enrollment changed)
+                                    when (errorCode) {
+                                        BiometricPrompt.ERROR_HW_NOT_PRESENT,
+                                        BiometricPrompt.ERROR_HW_UNAVAILABLE,
+                                        BiometricPrompt.ERROR_NO_BIOMETRICS -> {
+                                            // Key may be invalidated — notify daemon
+                                            viewModel.sendError(
+                                                code = 1001,
+                                                description = "key_invalidated",
+                                                challengeID = challenge.challengeID
+                                            )
+                                        }
+                                        else -> {
+                                            // User cancelled or other error — let daemon timeout naturally
+                                        }
+                                    }
                                 }
                             }
                         )
@@ -109,6 +125,12 @@ class MainActivity : FragmentActivity() {
                             biometricPrompt.authenticate(promptInfo, BiometricPrompt.CryptoObject(signature))
                         } catch (e: Exception) {
                             android.util.Log.e("MainActivity", "Failed to init biometric prompt", e)
+                            // Key may be invalidated — send error to daemon
+                            viewModel.sendError(
+                                code = 1001,
+                                description = "key_invalidated",
+                                challengeID = challenge.challengeID
+                            )
                         }
                     }
                 }

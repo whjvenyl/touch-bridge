@@ -86,7 +86,12 @@ fun PairingScreen(viewModel: TouchBridgeViewModel) {
                 pairingState = "error"
                 return
             }
-            viewModel.completePairing(macName, serviceUUID)
+            // Extract pairing token (base64-encoded, one-time use from QR)
+            val pairingToken: ByteArray? = if (json.has("pairingToken")) {
+                dev.touchbridge.android.core.WireFormat.decodeBase64(json.getString("pairingToken"))
+            } else null
+
+            viewModel.completePairing(macName, serviceUUID, pairingToken)
             viewModel.startScanning()
             pairingState = "paired"
         } catch (e: Exception) {
@@ -106,7 +111,7 @@ fun PairingScreen(viewModel: TouchBridgeViewModel) {
         )
 
         Text(
-            text = "Run 'touchbridge-test pair' on your Mac,\nthen scan the QR code or paste JSON.",
+            text = "Run 'touchbridge pair' on your Mac,\nthen scan the QR code or paste JSON.",
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

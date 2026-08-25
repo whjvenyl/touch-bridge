@@ -156,13 +156,22 @@ class BLEClient(private val context: Context) {
 
     // MARK: - Write Operations
 
-    fun sendResponse(data: ByteArray): Boolean {
+    /**
+     * Send a challenge response (type 4) — encrypted payload with wire format header.
+     * The caller provides the already-encrypted payload; we prepend the header.
+     */
+    fun sendResponse(encryptedPayload: ByteArray): Boolean {
         val char = responseChar ?: return false
         val g = gatt ?: return false
-        char.value = data
+        val framed = WireFormat.encode(WireFormat.TYPE_CHALLENGE_RESPONSE, encryptedPayload)
+        char.value = framed
         return g.writeCharacteristic(char)
     }
 
+    /**
+     * Send ECDH session key (raw public key bytes, no wire format header —
+     * this is the key exchange phase before the protocol session is established).
+     */
     fun sendSessionKey(data: ByteArray): Boolean {
         val char = sessionKeyChar ?: return false
         val g = gatt ?: return false
@@ -170,10 +179,35 @@ class BLEClient(private val context: Context) {
         return g.writeCharacteristic(char)
     }
 
-    fun sendPairingData(data: ByteArray): Boolean {
+    /**
+     * Send pairing data (type 1) — pair request with wire format header.
+     */
+    fun sendPairingData(payload: ByteArray): Boolean {
         val char = pairingChar ?: return false
         val g = gatt ?: return false
-        char.value = data
+        char.value = payload
+        return g.writeCharacteristic(char)
+    }
+
+    /**
+     * Send an identify message (type 6) — after ECDH on reconnect.
+     */
+    fun sendIdentify(deviceID: String, deviceName: String): Boolean {
+        val char = responseChar ?: return false
+        val g = gatt ?: return false
+        val framed = WireFormat.buildIdentify(deviceID, deviceName)
+        char.value = framed
+        return g.writeCharacteristic(char)
+    }
+
+    /**
+     * Send an error message (type 5).
+     */
+    fun sendError(code: Int, description: String, challengeID: String? = null): Boolean {
+        val char = responseChar ?: return false
+        val g = gatt ?: return false
+        val framed = WireFormat.buildError(code, description, challengeID)
+        char.value = framed
         return g.writeCharacteristic(char)
     }
 
@@ -282,16 +316,23 @@ class BLEClient(private val context: Context) {
 
             when (characteristic.uuid) {
                 Constants.CHALLENGE_CHAR_UUID -> {
-                    Log.i(TAG, "Challenge received (${data.size} bytes)")
-                    listener?.onChallengeReceived(data, address)
+                    // Strip wire format header [version][type] from challenge
+                    val decoded = WireFormat.decode(data)
+                    val payload = decoded?.second ?: data
+                    Log.i(TAG, "Challenge received (${payload.size} bytes, type=${decoded?.first})")
+                    listener?.onChallengeReceived(payload, address)
                 }
                 Constants.SESSION_KEY_CHAR_UUID -> {
+                    // Session key is raw ECDH public key bytes (no wire format header)
                     Log.i(TAG, "Session key received (${data.size} bytes)")
                     listener?.onSessionKeyReceived(data, address)
                 }
                 Constants.PAIRING_CHAR_UUID -> {
-                    Log.i(TAG, "Pairing data received (${data.size} bytes)")
-                    listener?.onPairingDataReceived(data, address)
+                    // Strip wire format header from pairing response
+                    val decoded = WireFormat.decode(data)
+                    val payload = decoded?.second ?: data
+                    Log.i(TAG, "Pairing data received (${payload.size} bytes, type=${decoded?.first})")
+                    listener?.onPairingDataReceived(payload, address)
                 }
             }
         }

@@ -100,7 +100,7 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
         _uiState.value = _uiState.value.copy(statusMessage = "Connecting...")
     }
 
-    fun completePairing(macName: String, macId: String) {
+    fun completePairing(macName: String, macId: String, pairingToken: ByteArray? = null) {
         android.util.Log.i("TouchBridgeVM", "Completing pairing for: $macName ($macId)")
         val prefs = context.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
@@ -113,6 +113,24 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
             keystoreManager.generateKeyPair(Constants.SIGNING_KEY_ALIAS)
         }
 
+        // Generate a stable device ID for this Android device if not already set
+        val deviceID = getOrCreateDeviceID()
+
+        // Send pair request to daemon via BLE (with pairing token from QR)
+        val publicKey = try {
+            keystoreManager.getPublicKey(Constants.SIGNING_KEY_ALIAS)
+        } catch (e: Exception) { null }
+        if (publicKey != null) {
+            val pairRequest = dev.touchbridge.android.core.WireFormat.buildPairRequest(
+                deviceName = android.os.Build.MODEL,
+                publicKey = publicKey,
+                deviceID = deviceID,
+                pairingToken = pairingToken
+            )
+            bleClient.sendPairingData(pairRequest)
+            Log.i("TouchBridgeVM", "Sent pair request with token=${pairingToken != null}")
+        }
+
         _uiState.value = _uiState.value.copy(
             isPaired = true,
             pairedMacName = macName,
@@ -121,6 +139,28 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
 
         // Immediately start scanning with the new ID
         startScanning()
+    }
+
+    /**
+     * Get the stored device ID, or null if not yet paired.
+     */
+    private fun getDeviceID(): String? {
+        val prefs = context.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(Constants.PREF_DEVICE_ID, null)
+    }
+
+    /**
+     * Get or create a stable device ID for this Android device.
+     * Used in pair requests and identify messages.
+     */
+    private fun getOrCreateDeviceID(): String {
+        val prefs = context.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
+        var deviceID = prefs.getString(Constants.PREF_DEVICE_ID, null)
+        if (deviceID == null) {
+            deviceID = java.util.UUID.randomUUID().toString()
+            prefs.edit().putString(Constants.PREF_DEVICE_ID, deviceID).apply()
+        }
+        return deviceID
     }
 
     fun unpair() {
@@ -137,9 +177,10 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
     fun sendAuthResponse(challengeID: String, signature: ByteArray) {
         val deviceID = android.os.Build.MODEL
         try {
-            val responseJson = challengeHandler.buildResponse(challengeID, signature, deviceID)
-            val encryptedResponse = challengeHandler.encrypt(responseJson)
-            
+            // Build the response payload, encrypt it, then frame with wire format header
+            val responsePayload = challengeHandler.buildResponsePayload(challengeID, signature, deviceID)
+            val encryptedResponse = challengeHandler.encrypt(responsePayload)
+
             if (bleClient.sendResponse(encryptedResponse)) {
                 _uiState.value = _uiState.value.copy(
                     challengeCount = _uiState.value.challengeCount + 1,
@@ -158,6 +199,17 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
         } catch (e: Exception) {
             Log.e("TouchBridgeVM", "Error sending auth response", e)
             _uiState.value = _uiState.value.copy(statusMessage = "Encryption error")
+        }
+    }
+
+    /**
+     * Send an error message to the daemon (e.g. key invalidated).
+     */
+    fun sendError(code: Int, description: String, challengeID: String? = null) {
+        try {
+            bleClient.sendError(code, description, challengeID)
+        } catch (e: Exception) {
+            Log.e("TouchBridgeVM", "Failed to send error to daemon", e)
         }
     }
 
@@ -205,6 +257,15 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
         _uiState.value = _uiState.value.copy(
             statusMessage = "Connected — session encrypted"
         )
+
+        // After ECDH, send identify so the daemon recognizes this device
+        // without requiring full re-pairing on reconnect.
+        val deviceID = getDeviceID()
+        val deviceName = android.os.Build.MODEL
+        if (deviceID != null) {
+            bleClient.sendIdentify(deviceID, deviceName)
+            Log.i("TouchBridgeVM", "Sent identify: $deviceID ($deviceName)")
+        }
     }
 
     override fun onDeviceDiscovered(deviceAddress: String) {

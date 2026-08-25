@@ -126,26 +126,26 @@ class ChallengeHandler(
 
     /**
      * Parse a challenge message from decrypted JSON payload.
+     * Uses WireFormat's Base64 helpers for consistency with Swift's JSONEncoder.
      */
     fun parseChallenge(payload: ByteArray): ChallengeData {
         val json = JSONObject(String(payload))
         return ChallengeData(
             challengeID = json.getString("challengeID"),
-            encryptedNonce = android.util.Base64.decode(
-                json.getString("encryptedNonce"), android.util.Base64.DEFAULT
-            ),
+            encryptedNonce = WireFormat.decodeBase64(json.getString("encryptedNonce")),
             reason = json.getString("reason"),
             expiryUnix = json.getLong("expiryUnix")
         )
     }
 
     /**
-     * Build the signed response JSON.
+     * Build the signed response JSON payload (unencrypted).
+     * The caller is responsible for encrypting and framing with WireFormat.
      */
-    fun buildResponse(challengeID: String, signature: ByteArray, deviceID: String): ByteArray {
+    fun buildResponsePayload(challengeID: String, signature: ByteArray, deviceID: String): ByteArray {
         val json = JSONObject().apply {
             put("challengeID", challengeID)
-            put("signature", android.util.Base64.encodeToString(signature, android.util.Base64.NO_WRAP))
+            put("signature", WireFormat.encodeBase64(signature))
             put("deviceID", deviceID)
         }
         return json.toString().toByteArray()

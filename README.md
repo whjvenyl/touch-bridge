@@ -127,7 +127,7 @@ Open companion/android/ in Android Studio → Build → Install → Pair
 Uses encrypted BLE + Keystore (StrongBox/TEE) signing. No network involved.
 
 :::warning
-**Android status:** The Android companion has known protocol incompatibilities (wire format headers, Base64 encoding, missing identify message). See the [Architecture Review](design/ARCHITECTURE-REVIEW.md) for details. iOS is the recommended companion for now.
+**Android status:** Protocol mismatches (wire format headers, Base64 encoding, missing identify message, missing pairing token, missing key-invalidation error) have been fixed. Android and iOS companions are now protocol-compatible. See the [Architecture Review](design/ARCHITECTURE-REVIEW.md) for details.
 :::
 
 **Option C — Apple Watch (Tap):**

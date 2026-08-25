@@ -17,6 +17,7 @@ import Foundation
                  pamModulePath: String,
                  patchSudo: Bool,
                  patchScreensaver: Bool,
+                 ignoreSSH: Bool,
                  with reply: @escaping (Bool, String) -> Void)
 
     /// Uninstall TouchBridge system components.

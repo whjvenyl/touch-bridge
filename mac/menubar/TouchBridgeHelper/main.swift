@@ -37,6 +37,7 @@ class HelperDelegate: NSObject, NSXPCListenerDelegate {
 
 class HelperConnection: NSObject, HelperProtocol {
     let pamLine = "auth       sufficient     pam_touchbridge.so"
+    let pamLineSSH = "auth       sufficient     pam_touchbridge.so ignore_ssh"
     let pamDir = "/etc/pam.d"
     let pamLibDir = "/usr/local/lib/pam"
     let binDir = "/usr/local/bin"
@@ -47,8 +48,12 @@ class HelperConnection: NSObject, HelperProtocol {
                  pamModulePath: String,
                  patchSudo: Bool,
                  patchScreensaver: Bool,
+                 ignoreSSH: Bool,
                  with reply: @escaping (Bool, String) -> Void) {
         var messages: [String] = []
+
+        // Select the PAM line based on ignoreSSH
+        let activePAMLine = ignoreSSH ? pamLineSSH : pamLine
 
         // 1. Copy daemon binary to /usr/local/bin/
         if FileManager.default.fileExists(atPath: daemonPath) {
@@ -88,7 +93,7 @@ class HelperConnection: NSObject, HelperProtocol {
 
         // 3. Patch PAM configs
         if patchSudo {
-            if !patchSudoPAM() {
+            if !patchSudoPAM(line: activePAMLine) {
                 reply(false, "Failed to patch sudo PAM config")
                 return
             }
@@ -96,7 +101,7 @@ class HelperConnection: NSObject, HelperProtocol {
         }
 
         if patchScreensaver {
-            if !patchScreensaverPAM() {
+            if !patchScreensaverPAM(line: activePAMLine) {
                 reply(false, "Failed to patch screensaver PAM config")
                 return
             }
@@ -152,20 +157,20 @@ class HelperConnection: NSObject, HelperProtocol {
     }
 
     /// Patch sudo PAM config. Uses sudo_local on Sonoma+, falls back to direct edit.
-    private func patchSudoPAM() -> Bool {
+    private func patchSudoPAM(line: String) -> Bool {
         if supportsSudoLocal() {
-            return patchSudoLocal()
+            return patchSudoLocal(line: line)
         }
-        return patchPAMFileDirectly("\(pamDir)/sudo")
+        return patchPAMFileDirectly("\(pamDir)/sudo", line: line)
     }
 
     /// Patch screensaver PAM config (always a direct edit — no *_local equivalent).
-    private func patchScreensaverPAM() -> Bool {
-        return patchPAMFileDirectly("\(pamDir)/screensaver")
+    private func patchScreensaverPAM(line: String) -> Bool {
+        return patchPAMFileDirectly("\(pamDir)/screensaver", line: line)
     }
 
     /// Write our hook into /etc/pam.d/sudo_local (unprotected, safe).
-    private func patchSudoLocal() -> Bool {
+    private func patchSudoLocal(line: String) -> Bool {
         let path = "\(pamDir)/sudo_local"
         var content = ""
         if FileManager.default.fileExists(atPath: path) {
@@ -174,7 +179,7 @@ class HelperConnection: NSObject, HelperProtocol {
                 return true // already patched
             }
         }
-        let newContent = pamLine + "\n" + content
+        let newContent = line + "\n" + content
         do {
             try newContent.write(toFile: path, atomically: true, encoding: .utf8)
             chmod(path, 0o644)
@@ -185,7 +190,7 @@ class HelperConnection: NSObject, HelperProtocol {
     }
 
     /// Directly edit a PAM file: backup, insert our line as the first auth line.
-    private func patchPAMFileDirectly(_ pamFile: String) -> Bool {
+    private func patchPAMFileDirectly(_ pamFile: String, line: String) -> Bool {
         guard FileManager.default.fileExists(atPath: pamFile) else { return true }
         guard let content = try? String(contentsOfFile: pamFile, encoding: .utf8) else {
             return false
@@ -203,13 +208,13 @@ class HelperConnection: NSObject, HelperProtocol {
         var inserted = false
         for i in 0..<lines.count {
             if lines[i].hasPrefix("auth") {
-                lines.insert(pamLine, at: i)
+                lines.insert(line, at: i)
                 inserted = true
                 break
             }
         }
         if !inserted {
-            lines.append(pamLine)
+            lines.append(line)
         }
         let newContent = lines.joined(separator: "\n")
         do {
