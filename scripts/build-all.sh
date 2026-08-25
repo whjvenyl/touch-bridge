@@ -30,6 +30,18 @@ echo "━━━ TouchBridge Build ━━━"
 echo "Mode: $BUILD_MODE${RUN_TESTS:+ (with tests)}"
 echo ""
 
+# 0. Generate protobuf code (if protoc is available)
+if command -v protoc-gen-swift &>/dev/null; then
+  echo "▸ Generating protobuf code…"
+  bash "$PROJECT_DIR/protocol/generate.sh" 2>&1 | tail -1
+  echo "  ✓ Protobuf"
+  echo ""
+else
+  echo "▸ Skipping protobuf generation (install: brew install protobuf swift-protobuf)"
+  echo "  Using existing generated files if present."
+  echo ""
+fi
+
 # 1. Protocol package
 echo "▸ Building protocol package…"
 cd "$PROJECT_DIR/protocol/swift"
