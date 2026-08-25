@@ -14,12 +14,13 @@ struct SettingsWindowView: View {
             AboutView()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 500, height: 380)
+        .frame(width: 520, height: 400)
     }
 }
 
 struct GeneralSettingsView: View {
     @ObservedObject var state: MenuBarState
+    @State private var showUninstallAlert = false
 
     var body: some View {
         Form {
@@ -31,11 +32,6 @@ struct GeneralSettingsView: View {
                             .frame(width: 8, height: 8)
                         Text(state.isDaemonRunning ? "Running" : "Stopped")
                     }
-                }
-
-                LabeledContent("Socket") {
-                    Text(state.isDaemonRunning ? "Available" : "Unavailable")
-                        .foregroundStyle(.secondary)
                 }
 
                 Toggle(isOn: Binding(
@@ -52,6 +48,38 @@ struct GeneralSettingsView: View {
                     } else {
                         Button("Start Daemon") { state.startDaemon() }
                             .buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+
+            Section("Authentication Surfaces") {
+                Toggle(isOn: Binding(
+                    get: { state.sudoEnabled },
+                    set: { newVal in
+                        Task { await state.togglePAMSurface("sudo", enabled: newVal) }
+                    }
+                )) {
+                    Label("sudo", systemImage: "terminal")
+                }
+                .toggleStyle(.switch)
+
+                Toggle(isOn: Binding(
+                    get: { state.screensaverEnabled },
+                    set: { newVal in
+                        Task { await state.togglePAMSurface("screensaver", enabled: newVal) }
+                    }
+                )) {
+                    Label("Screensaver unlock", systemImage: "lock.open")
+                }
+                .toggleStyle(.switch)
+
+                if state.isInstalling {
+                    HStack {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Applying…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -79,30 +107,19 @@ struct GeneralSettingsView: View {
 
             Section {
                 Button("Uninstall TouchBridge…", role: .destructive) {
-                    let alert = NSAlert()
-                    alert.messageText = "Uninstall TouchBridge?"
-                    alert.informativeText = "This will remove the daemon, PAM module, and restore your original sudo config."
-                    alert.alertStyle = .warning
-                    alert.addButton(withTitle: "Uninstall")
-                    alert.addButton(withTitle: "Cancel")
-
-                    if alert.runModal() == .alertFirstButtonReturn {
-                        runUninstall()
-                    }
+                    showUninstallAlert = true
                 }
             }
         }
         .padding()
-    }
-
-    private func runUninstall() {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = [
-            "-e",
-            "do shell script \"/bin/bash /usr/local/share/touchbridge/uninstall.sh\" with administrator privileges"
-        ]
-        try? process.run()
+        .alert("Uninstall TouchBridge?", isPresented: $showUninstallAlert) {
+            Button("Uninstall", role: .destructive) {
+                Task { await state.uninstallSystem() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will remove the daemon, PAM module, and restore your original PAM configs. Paired devices and logs are preserved.")
+        }
     }
 }
 
@@ -193,7 +210,6 @@ struct DevicesSettingsView: View {
     }
 
     private func openPairingWindow() {
-        // Open the pairing window via NSApp
         if let url = URL(string: "touchbridge://pairing") {
             NSWorkspace.shared.open(url)
         }
@@ -221,15 +237,12 @@ struct AboutView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Text("Use your phone's fingerprint to\nauthenticate on any Mac.")
+            Text("Approve authentication on your Mac\nusing a nearby phone or watch.")
                 .font(.subheadline)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
 
             Spacer()
-
-            Link("GitHub", destination: URL(string: "https://github.com/HMAKT99/UnTouchID")!)
-                .font(.caption)
 
             Text("MIT License")
                 .font(.caption2)

@@ -18,7 +18,6 @@ struct TouchBridgeMenuApp: App {
         // Setup wizard window (shown on first launch)
         WindowGroup("TouchBridge Setup", id: "setup") {
             SetupWizardView(state: appState)
-                .frame(width: 500, height: 600)
         }
         .windowResizability(.contentSize)
 

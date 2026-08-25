@@ -15,6 +15,10 @@ class MenuBarState: ObservableObject {
     @Published var isInstalling: Bool = false
     @Published var installMessage: String?
 
+    // PAM surface toggles
+    @Published var sudoEnabled: Bool = false
+    @Published var screensaverEnabled: Bool = false
+
     // Daemon status (from socket)
     @Published var status: DaemonClient.DaemonStatus?
     @Published var statusError: String?
@@ -63,6 +67,19 @@ class MenuBarState: ObservableObject {
 
         isDaemonRunning = client.isSocketAvailable
         isAutoLaunchEnabled = FileManager.default.fileExists(atPath: launchAgentPlist)
+
+        // Check PAM surface status
+        sudoEnabled = checkPAMSurface("sudo_local") || checkPAMSurface("sudo")
+        screensaverEnabled = checkPAMSurface("screensaver")
+    }
+
+    /// Check if a PAM file contains our hook.
+    private func checkPAMSurface(_ name: String) -> Bool {
+        let path = "/etc/pam.d/\(name)"
+        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return false
+        }
+        return content.contains("pam_touchbridge")
     }
 
     /// Start the daemon via launchctl.
@@ -93,12 +110,10 @@ class MenuBarState: ObservableObject {
     /// Toggle autolaunch at login (load/unload LaunchAgent).
     func toggleAutoLaunch() {
         if isAutoLaunchEnabled {
-            // Disable: stop daemon and remove plist
             stopDaemon()
             try? FileManager.default.removeItem(atPath: launchAgentPlist)
             isAutoLaunchEnabled = false
         } else {
-            // Enable: reinstall plist and start
             installLaunchAgentPlist()
             startDaemon()
             isAutoLaunchEnabled = true
@@ -108,12 +123,10 @@ class MenuBarState: ObservableObject {
     // MARK: - Install / Uninstall via privileged helper
 
     /// Install TouchBridge system components using the privileged helper.
-    /// Registers the helper daemon (if not already), then sends the install command.
-    func installSystem() async {
+    func installSystem(patchSudo: Bool = true, patchScreensaver: Bool = false) async {
         isInstalling = true
         installMessage = nil
 
-        // Register helper if needed
         if !helperClient.isHelperRegistered {
             let registered = await helperClient.registerHelper()
             if !registered {
@@ -123,7 +136,6 @@ class MenuBarState: ObservableObject {
             }
         }
 
-        // Get bundled binary paths
         guard let daemonPath = BinaryLocator.bundledDaemonPath,
               let pamPath = BinaryLocator.bundledPAMPath else {
             installMessage = "Bundled binaries not found."
@@ -134,8 +146,8 @@ class MenuBarState: ObservableObject {
         let (success, message) = await helperClient.install(
             daemonPath: daemonPath,
             pamModulePath: pamPath,
-            patchSudo: true,
-            patchScreensaver: false
+            patchSudo: patchSudo,
+            patchScreensaver: patchScreensaver
         )
 
         if success {
@@ -167,6 +179,61 @@ class MenuBarState: ObservableObject {
         } else {
             installMessage = "Uninstallation failed: \(message)"
         }
+        isInstalling = false
+    }
+
+    /// Toggle a PAM surface (sudo or screensaver) via the privileged helper.
+    func togglePAMSurface(_ surface: String, enabled: Bool) async {
+        isInstalling = true
+        installMessage = nil
+
+        if !helperClient.isHelperRegistered {
+            let registered = await helperClient.registerHelper()
+            if !registered {
+                installMessage = "Could not register the privileged helper."
+                isInstalling = false
+                return
+            }
+        }
+
+        if enabled {
+            guard let pamPath = BinaryLocator.bundledPAMPath else {
+                installMessage = "Bundled PAM module not found."
+                isInstalling = false
+                return
+            }
+            // Ensure PAM module is installed first
+            let (ok, msg) = await helperClient.install(
+                daemonPath: BinaryLocator.bundledDaemonPath ?? "",
+                pamModulePath: pamPath,
+                patchSudo: surface == "sudo",
+                patchScreensaver: surface == "screensaver"
+            )
+            if !ok {
+                installMessage = "Failed: \(msg)"
+            }
+        } else {
+            // Uninstall just this surface — re-run with the opposite config
+            // The helper's uninstall removes everything, so we reinstall with
+            // the desired surfaces. This is simpler than per-surface removal.
+            let (ok, _) = await helperClient.uninstall(removeBinary: false)
+            if ok {
+                // Re-patch only the surfaces that should remain
+                let wantSudo = surface == "sudo" ? false : sudoEnabled
+                let wantScreensaver = surface == "screensaver" ? false : screensaverEnabled
+                if wantSudo || wantScreensaver {
+                    guard let pamPath = BinaryLocator.bundledPAMPath else { return }
+                    _ = await helperClient.install(
+                        daemonPath: "",
+                        pamModulePath: pamPath,
+                        patchSudo: wantSudo,
+                        patchScreensaver: wantScreensaver
+                    )
+                }
+            }
+        }
+
+        checkInstallation()
         isInstalling = false
     }
 
@@ -214,9 +281,7 @@ class MenuBarState: ObservableObject {
             status = newStatus
             statusError = nil
 
-            // If pairing was active and now it's not, we may have just paired
             if isPairing && !newStatus.isPairingActive {
-                // Check if a new device appeared
                 isPairing = false
                 pairingQRData = nil
             }
@@ -261,10 +326,8 @@ class MenuBarState: ObservableObject {
     func cancelPairing() {
         Task {
             try? await client.cancelPairing()
-            await MainActor.run {
-                isPairing = false
-                pairingQRData = nil
-            }
+            isPairing = false
+            pairingQRData = nil
         }
     }
 

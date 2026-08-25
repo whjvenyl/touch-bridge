@@ -5,51 +5,96 @@ struct MenuBarView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack {
-                Image(systemName: "touchid")
-                    .font(.title2)
-                    .foregroundStyle(headerColor)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("TouchBridge")
-                        .font(.headline)
-                    Text(statusText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
+            if !state.isInstalled {
+                notInstalledView
+            } else {
+                installedView
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+        }
+        .frame(width: 320)
+    }
+
+    // MARK: - Not installed
+
+    private var notInstalledView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "touchid")
+                .font(.title2)
+                .foregroundStyle(.red)
+            Text("TouchBridge")
+                .font(.headline)
+            Text("Not installed yet. Install to start approving authentication from your phone.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            if state.isInstalling {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Installing…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Button("Install TouchBridge") {
+                    Task { await state.installSystem() }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+            }
+
+            if let msg = state.installMessage {
+                Text(msg)
+                    .font(.caption2)
+                    .foregroundStyle(msg.contains("fail") ? .red : .green)
+                    .multilineTextAlignment(.center)
+            }
 
             Divider()
+            quitButton
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
 
-            // Daemon status
-            daemonStatusSection
+    // MARK: - Installed
 
-            // Paired devices
+    private var installedView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            Divider()
+            daemonSection
             if let status = state.status, !status.pairedDevices.isEmpty {
                 Divider()
                 pairedDevicesSection(status.pairedDevices)
             }
-
-            // Recent auth events
             if !state.recentEvents.isEmpty {
                 Divider()
                 recentActivitySection
             }
-
             Divider()
-
-            // Actions
             actionsSection
         }
-        .frame(width: 300)
     }
 
-    // MARK: - Sections
+    private var header: some View {
+        HStack {
+            Image(systemName: "touchid")
+                .font(.title2)
+                .foregroundStyle(headerColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("TouchBridge")
+                    .font(.headline)
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
 
-    private var daemonStatusSection: some View {
+    private var daemonSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Circle()
@@ -127,6 +172,7 @@ struct MenuBarView: View {
 
             Button {
                 state.startPairing()
+                openPairingWindow()
             } label: {
                 Label("Pair New Device", systemImage: "plus.circle")
                     .font(.subheadline)
@@ -169,6 +215,7 @@ struct MenuBarView: View {
             if state.status == nil && state.isDaemonRunning {
                 Button {
                     state.startPairing()
+                    openPairingWindow()
                 } label: {
                     Label("Pair New Device", systemImage: "plus.circle")
                 }
@@ -199,15 +246,19 @@ struct MenuBarView: View {
 
             Divider()
 
-            Button {
-                NSApplication.shared.terminate(nil)
-            } label: {
-                Text("Quit TouchBridge")
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            quitButton
         }
+    }
+
+    private var quitButton: some View {
+        Button {
+            NSApplication.shared.terminate(nil)
+        } label: {
+            Text("Quit TouchBridge")
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Helpers
@@ -231,6 +282,12 @@ struct MenuBarView: View {
             return "Waiting for device…"
         }
         return "Connecting…"
+    }
+
+    private func openPairingWindow() {
+        if let url = URL(string: "touchbridge://pairing") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func formatTime(_ iso: String) -> String {
