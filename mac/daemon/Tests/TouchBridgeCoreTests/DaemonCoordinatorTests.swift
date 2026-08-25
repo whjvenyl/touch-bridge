@@ -137,13 +137,16 @@ final class CompanionSimulator: @unchecked Sendable {
 
     // MARK: - Identify
 
-    /// Create an encrypted identify message: [1, 6] + AES-GCM(JSON{deviceID, deviceName}).
+    /// Create an encrypted identify message: [1, 6] + AES-GCM(protobuf Identify).
     func makeIdentifyData() throws -> Data {
         guard let crypto = sessionCrypto else { throw CompanionError.noSession }
 
-        struct Payload: Codable { let deviceID: String; let deviceName: String }
-        let json = try JSONEncoder().encode(Payload(deviceID: deviceID, deviceName: deviceName))
-        let encrypted = try crypto.encrypt(plaintext: json)
+        let msg = TBIdentify.with {
+            $0.deviceID = deviceID
+            $0.deviceName = deviceName
+        }
+        let payload = try msg.serializedData()
+        let encrypted = try crypto.encrypt(plaintext: payload)
 
         var wire = Data([1, 6]) // version=1, type=identify(6)
         wire.append(encrypted)
@@ -162,7 +165,7 @@ final class CompanionSimulator: @unchecked Sendable {
         // Parse challenge (strip 2-byte wire header)
         guard wireData.count > 2 else { throw CompanionError.invalidData }
         let payload = wireData.dropFirst(2)
-        let msg = try WireFormat.decodePayload(ChallengeIssuedMessage.self, from: payload)
+        let msg = try WireFormat.decodePayload(TBChallengeIssued.self, from: payload)
 
         // Decrypt nonce
         let nonce = try crypto.decrypt(ciphertext: msg.encryptedNonce)
@@ -179,11 +182,11 @@ final class CompanionSimulator: @unchecked Sendable {
         }
 
         // Encode response with wire header
-        let response = ChallengeResponseMessage(
-            challengeID: msg.challengeID,
-            signature: signature,
-            deviceID: deviceID
-        )
+        let response = TBChallengeResponse.with {
+            $0.challengeID = msg.challengeID
+            $0.signature = signature
+            $0.deviceID = deviceID
+        }
         return try WireFormat.encode(.challengeResponse, response)
     }
 
@@ -191,20 +194,20 @@ final class CompanionSimulator: @unchecked Sendable {
     func respondWithBadSignature(_ wireData: Data) throws -> Data {
         guard wireData.count > 2 else { throw CompanionError.invalidData }
         let payload = wireData.dropFirst(2)
-        let msg = try WireFormat.decodePayload(ChallengeIssuedMessage.self, from: payload)
+        let msg = try WireFormat.decodePayload(TBChallengeIssued.self, from: payload)
 
         let garbage = Data(repeating: 0xFF, count: 64)
-        let response = ChallengeResponseMessage(
-            challengeID: msg.challengeID,
-            signature: garbage,
-            deviceID: deviceID
-        )
+        let response = TBChallengeResponse.with {
+            $0.challengeID = msg.challengeID
+            $0.signature = garbage
+            $0.deviceID = deviceID
+        }
         return try WireFormat.encode(.challengeResponse, response)
     }
 
     // MARK: - Key Invalidated Error
 
-    /// Create an encrypted key-invalidated error: [1, 5] + AES-GCM(JSON{code, description, challengeID}).
+    /// Create an encrypted key-invalidated error: [1, 5] + AES-GCM(protobuf Error).
     ///
     /// Consumes the first challenge in wireData to extract the challengeID.
     func makeKeyInvalidatedError(for challengeWireData: Data) throws -> Data {
@@ -212,16 +215,15 @@ final class CompanionSimulator: @unchecked Sendable {
         guard challengeWireData.count > 2 else { throw CompanionError.invalidData }
 
         let payload = challengeWireData.dropFirst(2)
-        let msg = try WireFormat.decodePayload(ChallengeIssuedMessage.self, from: payload)
+        let msg = try WireFormat.decodePayload(TBChallengeIssued.self, from: payload)
 
-        struct ErrorPayload: Codable {
-            let code: UInt16
-            let description: String
-            let challengeID: String?
+        let err = TBError.with {
+            $0.code = 1001
+            $0.description_p = "key_invalidated"
+            $0.challengeID = msg.challengeID
         }
-        let errPayload = ErrorPayload(code: 1001, description: "key_invalidated", challengeID: msg.challengeID)
-        let json = try JSONEncoder().encode(errPayload)
-        let encrypted = try crypto.encrypt(plaintext: json)
+        let errData = try err.serializedData()
+        let encrypted = try crypto.encrypt(plaintext: errData)
 
         var wire = Data([1, 5]) // version=1, type=error(5)
         wire.append(encrypted)
@@ -809,14 +811,14 @@ enum TestSetupError: Error { case ecdhFailed }
         return
     }
     let payload = challengeWire.dropFirst(2)
-    let msg = try WireFormat.decodePayload(ChallengeIssuedMessage.self, from: payload)
+    let msg = try WireFormat.decodePayload(TBChallengeIssued.self, from: payload)
 
     // Spoof: valid challengeID but a deviceID that is not in the keychain
-    let spoofed = ChallengeResponseMessage(
-        challengeID: msg.challengeID,
-        signature: Data(repeating: 0, count: 64),
-        deviceID: "spoofed-unknown-device"
-    )
+    let spoofed = TBChallengeResponse.with {
+        $0.challengeID = msg.challengeID
+        $0.signature = Data(repeating: 0, count: 64)
+        $0.deviceID = "spoofed-unknown-device"
+    }
     let spoofWire = try WireFormat.encode(.challengeResponse, spoofed)
     bleServer.simulateResponse(spoofWire, from: companion.centralID)
     try await Task.sleep(nanoseconds: 50_000_000)  // let coordinator process the spoof
@@ -858,22 +860,22 @@ private func makePairingTestCoordinator() -> (
 extension CompanionSimulator {
     /// Build a wire-format pair request: [1, 1] + JSON PairRequestMessage.
     func makePairRequest(token: Data?) throws -> Data {
-        let msg = PairRequestMessage(
-            deviceName: deviceName,
-            publicKey: signingPublicKeyData,
-            deviceID: deviceID,
-            pairingToken: token
-        )
+        let msg = TBPairRequest.with {
+            $0.deviceName = deviceName
+            $0.publicKey = signingPublicKeyData
+            $0.deviceID = deviceID
+            if let token { $0.pairingToken = token }
+        }
         return try WireFormat.encode(.pairRequest, msg)
     }
 }
 
 /// Decode the daemon's last pairing response, if any.
-private func lastPairResponse(_ bleServer: MockBLEServer) throws -> PairResponseMessage? {
+private func lastPairResponse(_ bleServer: MockBLEServer) throws -> TBPairResponse? {
     guard let sent = bleServer.sentPairingResponses.last else { return nil }
     let (type, payload) = try WireFormat.decode(data: sent.data)
     guard type == .pairResponse else { return nil }
-    return try WireFormat.decodePayload(PairResponseMessage.self, from: payload)
+    return try WireFormat.decodePayload(TBPairResponse.self, from: payload)
 }
 
 @Test func pairingWithValidTokenSucceeds() async throws {

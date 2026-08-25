@@ -88,7 +88,7 @@ fun PairingScreen(viewModel: TouchBridgeViewModel) {
             }
             // Extract pairing token (base64-encoded, one-time use from QR)
             val pairingToken: ByteArray? = if (json.has("pairingToken")) {
-                dev.touchbridge.android.core.WireFormat.decodeBase64(json.getString("pairingToken"))
+                android.util.Base64.decode(json.getString("pairingToken"), android.util.Base64.DEFAULT)
             } else null
 
             viewModel.completePairing(macName, serviceUUID, pairingToken)

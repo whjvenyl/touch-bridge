@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.protobuf")
 }
 
 android {
@@ -28,6 +29,22 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+// Protobuf code generation — generates Java + Kotlin from .proto files at build time.
+// Proto files live in app/src/main/proto/
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:4.31.1"
+    }
+    generateProtoTasks {
+        all().forEach { task ->
+            task.builtins {
+                create("java")
+                create("kotlin")
+            }
+        }
     }
 }
 
@@ -61,4 +78,7 @@ dependencies {
 
     // ML Kit Barcode Scanning
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+
+    // Protobuf runtime
+    implementation("com.google.protobuf:protobuf-kotlin:4.31.1")
 }

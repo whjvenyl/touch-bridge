@@ -48,12 +48,12 @@ import CryptoKit
     let encryptedNonce = try macSession.encrypt(plaintext: challenge.nonce)
 
     // Simulate wire message
-    let challengeMsg = ChallengeIssuedMessage(
-        challengeID: challenge.id.uuidString,
-        encryptedNonce: encryptedNonce,
-        reason: "sudo",
-        expiryUnix: UInt64(challenge.expiresAt.timeIntervalSince1970)
-    )
+    let challengeMsg = TBChallengeIssued.with {
+        $0.challengeID = challenge.id.uuidString
+        $0.encryptedNonce = encryptedNonce
+        $0.reason = "sudo"
+        $0.expiryUnix = UInt64(challenge.expiresAt.timeIntervalSince1970)
+    }
     let wireData = try WireFormat.encode(.challengeIssued, challengeMsg)
 
     // Verify wire message fits in BLE limit
@@ -61,7 +61,7 @@ import CryptoKit
 
     // --- iOS side: receive, decrypt, sign ---
     let (_, payload) = try WireFormat.decode(data: wireData)
-    let received = try WireFormat.decodePayload(ChallengeIssuedMessage.self, from: payload)
+    let received = try WireFormat.decodePayload(TBChallengeIssued.self, from: payload)
 
     let decryptedNonce = try iosSession.decrypt(ciphertext: received.encryptedNonce)
     #expect(decryptedNonce == challenge.nonce)
@@ -75,17 +75,17 @@ import CryptoKit
     )! as Data
 
     // iOS builds response
-    let responseMsg = ChallengeResponseMessage(
-        challengeID: received.challengeID,
-        signature: signature,
-        deviceID: "integration-test-device"
-    )
+    let responseMsg = TBChallengeResponse.with {
+        $0.challengeID = received.challengeID
+        $0.signature = signature
+        $0.deviceID = "integration-test-device"
+    }
     let responseWire = try WireFormat.encode(.challengeResponse, responseMsg)
     #expect(responseWire.count <= TouchBridgeConstants.maxMessageSize)
 
     // --- Mac side: verify ---
     let (_, responsePayload) = try WireFormat.decode(data: responseWire)
-    let response = try WireFormat.decodePayload(ChallengeResponseMessage.self, from: responsePayload)
+    let response = try WireFormat.decodePayload(TBChallengeResponse.self, from: responsePayload)
 
     let storedPublicKey = try store.retrievePublicKey(for: response.deviceID)
 
@@ -163,10 +163,13 @@ import CryptoKit
     let exported = SessionCrypto.exportPublicKey(publicKey)
 
     // Wrap in a PairRequestMessage and round-trip through wire format
-    let msg = PairRequestMessage(deviceName: "Test", publicKey: exported)
+    let msg = TBPairRequest.with {
+        $0.deviceName = "Test"
+        $0.publicKey = exported
+    }
     let wireData = try WireFormat.encode(.pairRequest, msg)
     let (_, payload) = try WireFormat.decode(data: wireData)
-    let decoded = try WireFormat.decodePayload(PairRequestMessage.self, from: payload)
+    let decoded = try WireFormat.decodePayload(TBPairRequest.self, from: payload)
 
     let importedKey = try SessionCrypto.importPublicKey(decoded.publicKey)
     #expect(SessionCrypto.exportPublicKey(importedKey) == exported)

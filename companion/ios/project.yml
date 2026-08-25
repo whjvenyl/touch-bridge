@@ -7,6 +7,10 @@ options:
   xcodeVersion: "15.0"
   generateEmptyDirectories: true
 
+packages:
+  TouchBridgeProtocol:
+    path: ../../protocol/swift
+
 settings:
   base:
     SWIFT_VERSION: "5.9"
@@ -17,6 +21,8 @@ targets:
   TouchBridge:
     type: application
     platform: iOS
+    dependencies:
+      - package: TouchBridgeProtocol
     sources:
       - path: TouchBridge
         excludes:

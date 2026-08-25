@@ -3,6 +3,7 @@ import UIKit
 import CryptoKit
 import UserNotifications
 import os.log
+import TouchBridgeProtocol
 
 /// Coordinates all companion app components: BLE client, ECDH session,
 /// challenge handling, Secure Enclave signing, and biometric auth.
@@ -212,17 +213,12 @@ public final class CompanionCoordinator: NSObject, @unchecked Sendable {
     /// The Mac decrypts it, looks up deviceID in the keychain, and marks
     /// this session as identified so it can receive challenges.
     private func sendIdentify(using crypto: SessionCryptoWrapper) {
-        struct IdentifyPayload: Codable {
-            let deviceID: String
-            let deviceName: String
-        }
-
         do {
-            let payload = IdentifyPayload(
-                deviceID: deviceID,
-                deviceName: UIDevice.current.name
-            )
-            let plaintext = try JSONEncoder().encode(payload)
+            let msg = TBIdentify.with {
+                $0.deviceID = deviceID
+                $0.deviceName = UIDevice.current.name
+            }
+            let plaintext = try msg.serializedData()
             let encrypted = try crypto.encrypt(plaintext: plaintext)
 
             var wireData = Data([1, 6]) // version=1, type=identify(6)
@@ -255,25 +251,17 @@ public final class CompanionCoordinator: NSObject, @unchecked Sendable {
     public func sendPairingRequest(macName: String) {
         do {
             let publicKey = try getOrCreateSigningKey()
-            // Truncate so the wire frame stays under the 256-byte protocol cap
+            // Truncate so the wire frame stays under the protocol cap
             let deviceName = String(UIDevice.current.name.prefix(20))
 
-            struct PairRequest: Codable {
-                let deviceName: String
-                let publicKey: Data
-                let deviceID: String
-                let pairingToken: Data?
+            let request = TBPairRequest.with {
+                $0.deviceName = deviceName
+                $0.publicKey = publicKey
+                $0.deviceID = deviceID
+                if let token = pendingPairingToken { $0.pairingToken = token }
             }
-            let request = PairRequest(
-                deviceName: deviceName,
-                publicKey: publicKey,
-                deviceID: deviceID,
-                pairingToken: pendingPairingToken
-            )
 
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .withoutEscapingSlashes
-            let payload = try encoder.encode(request)
+            let payload = try request.serializedData()
 
             var wireData = Data([1, 1]) // version=1, type=pairRequest(1)
             wireData.append(payload)
@@ -357,7 +345,7 @@ extension CompanionCoordinator: BLEClientDelegate {
     /// Extract the plaintext reason from a challenge wire frame (only the nonce is encrypted).
     private func challengeReason(from data: Data) -> String {
         guard data.count > 2,
-              let msg = try? JSONDecoder().decode(ChallengeIssuedMessageCompanion.self, from: data.dropFirst(2)) else {
+              let msg = try? TBChallengeIssued(serializedBytes: data.dropFirst(2)) else {
             return "authentication"
         }
         return msg.reason

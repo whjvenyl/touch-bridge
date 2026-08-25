@@ -8,7 +8,7 @@ import java.util.UUID
  */
 object Constants {
     const val PROTOCOL_VERSION: Byte = 0x01
-    const val MAX_MESSAGE_SIZE = 256
+    const val MAX_MESSAGE_SIZE = 512
 
     // BLE UUIDs — must match the Mac daemon's GATT service
     val SERVICE_UUID: UUID = UUID.fromString("B5E6D1A4-8C3F-4E2A-9D7B-1F5A0C6E3B28")

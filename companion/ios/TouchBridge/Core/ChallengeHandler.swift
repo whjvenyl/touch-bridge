@@ -1,5 +1,6 @@
 import Foundation
 import os.log
+import TouchBridgeProtocol
 
 /// Orchestrates the iOS side of challenge-response:
 /// decrypt challenge → prompt biometric → sign nonce → encrypt response → send via BLE.
@@ -30,10 +31,10 @@ public final class ChallengeHandler: @unchecked Sendable {
     ///
     /// Flow:
     /// 1. Decrypt with session key
-    /// 2. Parse ChallengeIssuedMessage
+    /// 2. Parse ChallengeIssued protobuf
     /// 3. Prompt biometric via LocalAuthManager
     /// 4. Sign nonce with Secure Enclave key
-    /// 5. Build ChallengeResponseMessage
+    /// 5. Build ChallengeResponse protobuf
     /// 6. Encrypt with session key
     /// 7. Send via BLE
     @MainActor
@@ -44,16 +45,16 @@ public final class ChallengeHandler: @unchecked Sendable {
             return .failed(.noSession)
         }
 
-        // 2. Parse — the challenge arrives as wire format [version, type] + plain JSON.
-        // Strip the 2-byte header before JSON-decoding. The nonce inside is separately encrypted.
+        // 2. Parse — the challenge arrives as wire format [version, type] + protobuf payload.
+        // Strip the 2-byte header before protobuf-decoding. The nonce inside is separately encrypted.
         guard encryptedData.count > 2 else {
             logger.error("Challenge data too short: \(encryptedData.count) bytes")
             return .failed(.parseFailed)
         }
-        let jsonPayload = encryptedData.dropFirst(2)
-        let challengeMsg: ChallengeIssuedMessageCompanion
+        let protobufPayload = encryptedData.dropFirst(2)
+        let challengeMsg: TBChallengeIssued
         do {
-            challengeMsg = try JSONDecoder().decode(ChallengeIssuedMessageCompanion.self, from: jsonPayload)
+            challengeMsg = try TBChallengeIssued(serializedBytes: protobufPayload)
         } catch {
             logger.error("Failed to parse challenge: \(error.localizedDescription)")
             return .failed(.parseFailed)
@@ -103,18 +104,18 @@ public final class ChallengeHandler: @unchecked Sendable {
         }
 
         // 5. Build response
-        let response = ChallengeResponseCompanion(
-            challengeID: challengeMsg.challengeID,
-            signature: signature,
-            deviceID: deviceID
-        )
+        let response = TBChallengeResponse.with {
+            $0.challengeID = challengeMsg.challengeID
+            $0.signature = signature
+            $0.deviceID = deviceID
+        }
 
-        // 6. Encode — daemon expects wire format: [version=1][type=4(challengeResponse)] + JSON
+        // 6. Encode — daemon expects wire format: [version=1][type=4(challengeResponse)] + protobuf
         let responseData: Data
         do {
-            let jsonData = try JSONEncoder().encode(response)
+            let protobufData = try response.serializedData()
             var wire = Data([1, 4]) // protocolVersion=1, MessageType.challengeResponse=4
-            wire.append(jsonData)
+            wire.append(protobufData)
             responseData = wire
         } catch {
             logger.error("Failed to encode response: \(error.localizedDescription)")
@@ -196,25 +197,19 @@ extension ChallengeHandler {
     /// Send a key-invalidated error to the Mac so it can fail the auth immediately
     /// rather than waiting for the 15-second timeout.
     ///
-    /// Wire format: [version=1][type=5(error)] + JSON payload
-    /// Matches the daemon's ErrorMessage type.
+    /// Wire format: [version=1][type=5(error)] + encrypted protobuf payload
     private func sendKeyInvalidatedError(
         challengeID: String,
         deviceID: String,
         session: SessionCryptoWrapper
     ) {
-        // Build the error payload. The daemon's ErrorMessage struct expects:
-        //   { "code": 1001, "description": "key_invalidated", "challengeID": "..." }
-        // We encrypt it with the session key so it matches the security model.
-        struct ErrorPayload: Codable {
-            let code: UInt16
-            let description: String
-            let challengeID: String?
+        let err = TBError.with {
+            $0.code = 1001
+            $0.description_p = "key_invalidated"
+            $0.challengeID = challengeID
         }
 
-        guard let payloadData = try? JSONEncoder().encode(
-            ErrorPayload(code: 1001, description: "key_invalidated", challengeID: challengeID)
-        ) else {
+        guard let payloadData = try? err.serializedData() else {
             logger.error("Failed to encode key-invalidated error payload")
             return
         }
@@ -231,25 +226,4 @@ extension ChallengeHandler {
         _ = sendResponse?(wireData)
         logger.info("Sent key-invalidated error to Mac for challenge \(challengeID)")
     }
-}
-
-/// Local copies of message types for the companion app (avoids cross-package dependency).
-struct ChallengeIssuedMessageCompanion: Codable {
-    let challengeID: String
-    let encryptedNonce: Data
-    let reason: String
-    let expiryUnix: UInt64
-
-    enum CodingKeys: String, CodingKey {
-        case challengeID = "challengeID"
-        case encryptedNonce
-        case reason
-        case expiryUnix
-    }
-}
-
-struct ChallengeResponseCompanion: Codable {
-    let challengeID: String
-    let signature: Data
-    let deviceID: String
 }

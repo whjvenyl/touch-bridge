@@ -17,3 +17,14 @@ dist/
 *.key
 *.pem
 credentials.json
+
+# Generated protobuf code — regenerated at build time by SPM/Gradle plugins
+# The .proto source files ARE committed; generated output is not.
+protocol/swift/Sources/TouchBridgeProtocol/Generated/
+companion/android/app/src/main/java/dev/touchbridge/android/proto/
+companion/android/app/src/main/proto/
+
+# Android build output
+companion/android/app/build/
+companion/android/build/
+companion/android/.gradle/

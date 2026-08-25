@@ -22,9 +22,9 @@ public struct PairingPayload: Codable, Sendable {
 ///
 /// Pairing flow:
 /// 1. Mac generates a `PairingPayload` with a random token, encodes to JSON for QR display
-/// 2. iPhone scans QR, connects via BLE, sends `PairRequestMessage` with its SE public key
+/// 2. iPhone scans QR, connects via BLE, sends `TBPairRequest` with its SE public key
 /// 3. Mac validates the token, stores the public key via `KeychainStore`
-/// 4. Mac responds with `PairResponseMessage(accepted: true)`
+/// 4. Mac responds with `TBPairResponse(accepted: true)`
 /// 5. Pairing token expires after 5 minutes
 public actor PairingManager {
     private let logger = Logger(subsystem: "dev.touchbridge", category: "PairingManager")

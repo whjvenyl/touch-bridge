@@ -1,6 +1,7 @@
 import Foundation
 import CoreBluetooth
 import os.log
+import TouchBridgeProtocol
 
 // MARK: - Delegate Protocol
 

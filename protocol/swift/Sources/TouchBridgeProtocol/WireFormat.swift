@@ -1,4 +1,5 @@
 import Foundation
+import SwiftProtobuf
 
 /// Errors during wire format encoding/decoding.
 public enum WireFormatError: Error, Sendable {
@@ -11,20 +12,19 @@ public enum WireFormatError: Error, Sendable {
 
 /// Handles encoding and decoding of TouchBridge wire messages.
 ///
-/// Wire format: [version: UInt8][type: UInt8][payload: JSON bytes]
-/// Max total size: 256 bytes.
-/// Uses JSON encoding for Phase 0 (MessagePack can be swapped in later).
+/// Wire format: [version: UInt8][type: UInt8][protobuf payload bytes]
+/// Max total size: 512 bytes (protobuf is more compact than JSON).
+///
+/// The version and type bytes are prepended outside of protobuf — they
+/// identify the message for routing before deserialization. The payload
+/// is a serialized protobuf message.
 public struct WireFormat: Sendable {
 
     private static let headerSize = 2 // version + type
 
-    public static func encode<T: Encodable>(_ type: MessageType, _ message: T) throws -> Data {
-        let encoder = JSONEncoder()
-        // Prevent forward-slash escaping (/ → \/) in base64-encoded Data fields.
-        // Without this, binary data that encodes to many '/' chars in base64 can
-        // push the JSON over the 256-byte BLE packet limit.
-        encoder.outputFormatting = .withoutEscapingSlashes
-        let payload = try encoder.encode(message)
+    /// Encode a protobuf message with the wire format header.
+    public static func encode<T: Message>(_ type: TBMessageType, _ message: T) throws -> Data {
+        let payload = try message.serializedData()
         let totalSize = headerSize + payload.count
         guard totalSize <= TouchBridgeConstants.maxMessageSize else {
             throw WireFormatError.messageTooLarge(totalSize)
@@ -32,18 +32,19 @@ public struct WireFormat: Sendable {
 
         var data = Data(capacity: totalSize)
         data.append(TouchBridgeConstants.protocolVersion)
-        data.append(type.rawValue)
+        data.append(UInt8(type.rawValue))
         data.append(payload)
         return data
     }
 
-    public static func decode(data: Data) throws -> (type: MessageType, payload: Data) {
+    /// Decode a wire format message into its type and raw protobuf payload.
+    public static func decode(data: Data) throws -> (type: TBMessageType, payload: Data) {
         guard data.count >= headerSize else {
             throw WireFormatError.messageTooSmall
         }
 
         let typeByte = data[data.startIndex + 1]
-        guard let type = MessageType(rawValue: typeByte) else {
+        guard let type = TBMessageType(rawValue: Int(typeByte)) else {
             throw WireFormatError.unknownMessageType(typeByte)
         }
 
@@ -51,7 +52,13 @@ public struct WireFormat: Sendable {
         return (type, payload)
     }
 
-    public static func decodePayload<T: Decodable>(_ payloadType: T.Type, from data: Data) throws -> T {
-        return try JSONDecoder().decode(payloadType, from: data)
+    /// Decode a protobuf payload into a specific message type.
+    public static func decodeMessage<T: Message>(_ payloadType: T.Type, from data: Data) throws -> T {
+        return try T(serializedBytes: data)
+    }
+
+    /// Alias for decodeMessage — kept for backward compatibility with existing call sites.
+    public static func decodePayload<T: Message>(_ payloadType: T.Type, from data: Data) throws -> T {
+        return try T(serializedBytes: data)
     }
 }

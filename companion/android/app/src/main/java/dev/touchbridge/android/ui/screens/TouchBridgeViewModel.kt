@@ -125,7 +125,7 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
                 deviceName = android.os.Build.MODEL,
                 publicKey = publicKey,
                 deviceID = deviceID,
-                pairingToken = pairingToken
+                pairingToken = pairingToken ?: ByteArray(0)
             )
             bleClient.sendPairingData(pairRequest)
             Log.i("TouchBridgeVM", "Sent pair request with token=${pairingToken != null}")
@@ -280,12 +280,13 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
     }
 
     override fun onPairingDataReceived(data: ByteArray, deviceAddress: String) {
-        // Parse pairing response from Mac
+        // Parse pairing response from Mac (protobuf)
         try {
-            val json = org.json.JSONObject(String(data))
-            val accepted = json.optBoolean("accepted", false)
-            if (accepted) {
-                val macId = json.optString("deviceID", deviceAddress)
+            // Strip wire format header [version][type] before parsing
+            val payload = if (data.size > 2) data.copyOfRange(2, data.size) else data
+            val response = dev.touchbridge.android.proto.PairResponse.parseFrom(payload)
+            if (response.accepted) {
+                val macId = response.deviceId.ifEmpty { deviceAddress }
                 completePairing("Mac", macId)
             }
         } catch (e: Exception) {

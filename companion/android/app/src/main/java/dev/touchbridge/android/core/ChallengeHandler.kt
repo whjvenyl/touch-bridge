@@ -2,7 +2,8 @@ package dev.touchbridge.android.core
 
 import android.util.Log
 import dev.touchbridge.android.Constants
-import org.json.JSONObject
+import dev.touchbridge.android.proto.ChallengeIssued
+import dev.touchbridge.android.proto.ChallengeResponse
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.spec.ECGenParameterSpec
@@ -125,30 +126,29 @@ class ChallengeHandler(
     }
 
     /**
-     * Parse a challenge message from decrypted JSON payload.
-     * Uses WireFormat's Base64 helpers for consistency with Swift's JSONEncoder.
+     * Parse a challenge message from protobuf payload.
      */
     fun parseChallenge(payload: ByteArray): ChallengeData {
-        val json = JSONObject(String(payload))
+        val msg = ChallengeIssued.parseFrom(payload)
         return ChallengeData(
-            challengeID = json.getString("challengeID"),
-            encryptedNonce = WireFormat.decodeBase64(json.getString("encryptedNonce")),
-            reason = json.getString("reason"),
-            expiryUnix = json.getLong("expiryUnix")
+            challengeID = msg.challengeId,
+            encryptedNonce = msg.encryptedNonce.toByteArray(),
+            reason = msg.reason,
+            expiryUnix = msg.expiryUnix
         )
     }
 
     /**
-     * Build the signed response JSON payload (unencrypted).
+     * Build the signed response protobuf payload (unencrypted).
      * The caller is responsible for encrypting and framing with WireFormat.
      */
     fun buildResponsePayload(challengeID: String, signature: ByteArray, deviceID: String): ByteArray {
-        val json = JSONObject().apply {
-            put("challengeID", challengeID)
-            put("signature", WireFormat.encodeBase64(signature))
-            put("deviceID", deviceID)
-        }
-        return json.toString().toByteArray()
+        val msg = ChallengeResponse.newBuilder()
+            .setChallengeId(challengeID)
+            .setSignature(com.google.protobuf.ByteString.copyFrom(signature))
+            .setDeviceId(deviceID)
+            .build()
+        return msg.toByteArray()
     }
 
     val isSessionReady: Boolean get() = sessionKey != null

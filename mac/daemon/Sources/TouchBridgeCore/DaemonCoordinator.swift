@@ -123,12 +123,12 @@ public final class DaemonCoordinator: NSObject, PAMAuthHandler, @unchecked Senda
             // Encrypt nonce for wire transfer
             let encryptedNonce = try crypto.encrypt(plaintext: challenge.nonce)
 
-            let msg = ChallengeIssuedMessage(
-                challengeID: challenge.id.uuidString,
-                encryptedNonce: encryptedNonce,
-                reason: reason,
-                expiryUnix: UInt64(challenge.expiresAt.timeIntervalSince1970)
-            )
+            let msg = TBChallengeIssued.with {
+                $0.challengeID = challenge.id.uuidString
+                $0.encryptedNonce = encryptedNonce
+                $0.reason = reason
+                $0.expiryUnix = UInt64(challenge.expiresAt.timeIntervalSince1970)
+            }
 
             let wireData = try WireFormat.encode(.challengeIssued, msg)
             let sent = bleServer.sendChallenge(wireData, to: centralID)
@@ -383,31 +383,31 @@ extension DaemonCoordinator: BLEServerDelegate {
                 // Detect wire-format messages (version=1, valid type byte) vs legacy raw-JSON pairing.
                 // Identify messages always use wire format; pairing requests use raw JSON currently.
                 if data.count >= 2, data[data.startIndex] == 1,
-                   let msgType = MessageType(rawValue: data[data.startIndex + 1]),
+                   let msgType = TBMessageType(rawValue: Int(data[data.startIndex + 1])),
                    msgType == .identify {
                     try await handleIdentify(data: data, from: centralID)
                     return
                 }
 
                 let (_, payload) = try WireFormat.decode(data: data)
-                let request = try WireFormat.decodePayload(PairRequestMessage.self, from: payload)
+                let request = try WireFormat.decodePayload(TBPairRequest.self, from: payload)
 
                 let device = try await pairingManager.validatePairingRequest(
-                    token: request.pairingToken ?? Data(),
+                    token: request.pairingToken,
                     devicePublicKey: request.publicKey,
                     deviceName: request.deviceName,
-                    deviceID: request.deviceID ?? centralID.uuidString
+                    deviceID: request.deviceID.isEmpty ? centralID.uuidString : request.deviceID
                 )
 
                 try await pairingManager.completePairing(device: device)
                 stateLock.withLock { sessions[centralID]?.deviceID = device.deviceID }
 
                 // Send acceptance response
-                let response = PairResponseMessage(
-                    deviceID: device.deviceID,
-                    publicKey: Data(),
-                    accepted: true
-                )
+                let response = TBPairResponse.with {
+                    $0.deviceID = device.deviceID
+                    $0.publicKey = Data()
+                    $0.accepted = true
+                }
                 let wireResponse = try WireFormat.encode(.pairResponse, response)
                 _ = server.sendPairingData(wireResponse, to: centralID)
 
@@ -425,11 +425,11 @@ extension DaemonCoordinator: BLEServerDelegate {
                 logger.error("Pairing failed: \(error.localizedDescription)")
 
                 // Send rejection
-                if let response = try? WireFormat.encode(.pairResponse, PairResponseMessage(
-                    deviceID: "",
-                    publicKey: Data(),
-                    accepted: false
-                )) {
+                if let response = try? WireFormat.encode(.pairResponse, TBPairResponse.with {
+                    $0.deviceID = ""
+                    $0.publicKey = Data()
+                    $0.accepted = false
+                }) {
                     _ = server.sendPairingData(response, to: centralID)
                 }
             }
@@ -451,18 +451,17 @@ extension DaemonCoordinator: BLEServerDelegate {
                         return
                     }
                     let plaintext = try crypto.decrypt(ciphertext: payload)
-                    let errMsg = try WireFormat.decodePayload(ErrorMessage.self, from: plaintext)
-                    logger.warning("Companion error \(errMsg.code): \(errMsg.description)")
+                    let errMsg = try WireFormat.decodePayload(TBError.self, from: plaintext)
+                    logger.warning("Companion error \(errMsg.code): \(errMsg.description_p)")
 
-                    if errMsg.code == ErrorCode.keyInvalidated.rawValue,
-                       let cidStr = errMsg.challengeID,
-                       let challengeID = UUID(uuidString: cidStr) {
+                    if errMsg.code == TBErrorCode.keyInvalidated.rawValue,
+                       let challengeID = UUID(uuidString: errMsg.challengeID) {
                         // Log before resuming so callers that await the result immediately
                         // and then read the audit log always see the entry.
                         await auditLog.log(AuditEntry(
-                            sessionID: cidStr,
+                            sessionID: errMsg.challengeID,
                             surface: "challenge",
-                            deviceID: errMsg.description,
+                            deviceID: errMsg.description_p,
                             result: "FAILED_KEY_INVALIDATED"
                         ))
                         let continuation = stateLock.withLock {
@@ -473,7 +472,7 @@ extension DaemonCoordinator: BLEServerDelegate {
                     return
                 }
 
-                let response = try WireFormat.decodePayload(ChallengeResponseMessage.self, from: payload)
+                let response = try WireFormat.decodePayload(TBChallengeResponse.self, from: payload)
 
                 guard let challengeID = UUID(uuidString: response.challengeID) else {
                     logger.error("Invalid challenge ID in response")
@@ -546,7 +545,7 @@ extension DaemonCoordinator: BLEServerDelegate {
         // The payload is a JSON object with deviceID and deviceName.
         // We use a local struct to avoid importing TouchBridgeProtocol's IdentifyMessage
         // (which is fine here since we're in the daemon — same package as DaemonCoordinator).
-        let msg = try WireFormat.decodePayload(IdentifyMessage.self, from: plaintext)
+        let msg = try WireFormat.decodePayload(TBIdentify.self, from: plaintext)
 
         // Verify this device is actually in the keychain (was paired at some point).
         guard (try? keychainStore.retrievePairedDevice(deviceID: msg.deviceID)) != nil else {

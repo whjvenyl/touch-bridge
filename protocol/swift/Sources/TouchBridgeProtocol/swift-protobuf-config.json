@@ -1,0 +1,9 @@
+{
+    "invocations": [
+        {
+            "protoFiles": ["touchbridge.proto"],
+            "protoPath": "protos",
+            "visibility": "public"
+        }
+    ]
+}
