@@ -1,6 +1,11 @@
 # Gradle files
 .gradle/
 build/
+app/build/
+
+# Generated protobuf code — Gradle protobuf plugin generates at build time
+app/src/main/java/dev/touchbridge/android/proto/
+app/src/main/proto/
 
 # Local configuration file (sdk path, etc)
 local.properties

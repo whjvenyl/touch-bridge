@@ -1,3 +1,7 @@
 # Swift Package Manager
 .build/
 .swiftpm/
+
+# Generated protobuf code — regenerate with: bash protocol/generate.sh
+# Requires: brew install protobuf swift-protobuf
+swift/Sources/TouchBridgeProtocol/Generated/
