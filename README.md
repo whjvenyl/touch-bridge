@@ -1,9 +1,9 @@
 <p align="center">
   <h1 align="center">🔐 TouchBridge</h1>
   <p align="center">
-    <a href="https://github.com/HMAKT99/UnTouchID/stargazers"><img src="https://img.shields.io/github/stars/HMAKT99/UnTouchID?style=flat-square&color=30d158" alt="Stars"></a>
+    <a href="https://github.com/whjvenyl/touch-bridge/stargazers"><img src="https://img.shields.io/github/stars/whjvenyl/touch-bridge?style=flat-square&color=30d158" alt="Stars"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
-    <a href="https://github.com/HMAKT99/UnTouchID/releases"><img src="https://img.shields.io/github/v/release/HMAKT99/UnTouchID?style=flat-square&color=ff9500" alt="Release"></a>
+    <a href="https://github.com/whjvenyl/touch-bridge/releases"><img src="https://img.shields.io/github/v/release/whjvenyl/touch-bridge?style=flat-square&color=ff9500" alt="Release"></a>
     <img src="https://img.shields.io/badge/tests-112%20passing-30d158?style=flat-square" alt="Tests">
     <img src="https://img.shields.io/badge/macOS-13%2B-000?style=flat-square&logo=apple" alt="macOS 13+">
   </p>
@@ -53,22 +53,27 @@ $ sudo echo hello
 
 No phone needed. Test the full `sudo` flow right now:
 
-### Install with Homebrew (recommended)
+### Option A — Menu Bar App (recommended)
+
+Download the latest `TouchBridge.dmg` from [releases](https://github.com/whjvenyl/touch-bridge/releases), drag to Applications, and open it. The app bundles everything — daemon, PAM module, and a privileged helper for one-click install. No terminal needed.
+
+### Option B — Homebrew (CLI only)
 
 <p align="center">
   <img src="marketing/assets/screenshots/homebrew-install.png" alt="Homebrew Install" width="600">
 </p>
 
 ```bash
-brew tap HMAKT99/touchbridge
+brew tap whjvenyl/touchbridge
 brew install --cask touchbridge
+sudo bash /usr/local/share/touchbridge/patch-pam.sh
 ```
 
 ### Or build from source
 
 ```bash
-git clone https://github.com/HMAKT99/UnTouchID.git
-cd UnTouchID
+git clone https://github.com/whjvenyl/touch-bridge.git
+cd touch-bridge
 bash scripts/build-all.sh release
 sudo bash scripts/install.sh
 ```
@@ -290,9 +295,11 @@ Private keys **never leave** Secure Enclave (iPhone) / StrongBox (Android). 32-b
 | `touchbridge` | Swift | `mac/daemon/` |
 | `pam_touchbridge.so` | C (arm64 + x86_64) | `mac/pam/` |
 | TouchBridgeProtocol | Swift | `protocol/swift/` |
-| Menubar control app | Swift / SwiftUI | `mac/menubar/` |
+| Menu bar app + privileged helper | Swift / SwiftUI | `mac/menubar/` |
 | iOS + watchOS app | Swift / SwiftUI | `companion/ios/` |
 | Android + Wear OS app | Kotlin / Compose | `companion/android/` |
+
+The menu bar app bundles the daemon binary, PAM module, and a privileged helper (via `SMAppService.daemon`) for one-click install — no terminal needed. Homebrew install is available for CLI-only users.
 
 **112 tests** — crypto, socket server, PAM integration, E2E pipeline.
 
@@ -330,9 +337,11 @@ See the [architecture review](design/ARCHITECTURE-REVIEW.md) for a full audit of
 
 ## Uninstall
 
-```bash
-sudo bash scripts/uninstall.sh
-```
+**Menu bar app:** Settings → General → Uninstall TouchBridge
+
+**Homebrew:** `brew uninstall --cask touchbridge`
+
+**From source:** `sudo bash scripts/uninstall.sh`
 
 ## Contributing
 

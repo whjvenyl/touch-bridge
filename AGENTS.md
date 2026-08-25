@@ -36,11 +36,25 @@ cd mac/daemon && swift test --filter PAMIntegration
 ## Install / Uninstall
 
 ```bash
-# Install (builds everything, patches PAM, installs LaunchAgent)
+# CLI install (builds everything, patches PAM, installs LaunchAgent)
 sudo bash scripts/install.sh
 
-# Uninstall (restores PAM files, removes daemon)
+# CLI uninstall (restores PAM files, removes daemon)
 sudo bash scripts/uninstall.sh
+
+# Menu bar app: build and run from Xcode
+# The app bundles daemon + PAM + privileged helper (SMAppService.daemon)
+# Install/uninstall is handled in-app via XPC to the privileged helper
+```
+
+## Release
+
+```bash
+# Build release artifacts (CLI .pkg + menubar app .dmg)
+bash scripts/build-release.sh
+# Artifacts in dist/:
+#   touchbridge-$VERSION.pkg  — CLI installer (brew cask)
+#   TouchBridge-$VERSION.dmg  — Menu bar app (direct download)
 ```
 
 ## E2E Test Flow
@@ -68,7 +82,10 @@ sudo echo 'TouchBridge works!'
   - `Sources/TouchBridgeCore/` — testable library (ChallengeManager, KeychainStore, BLE, SocketServer, etc.)
   - `Sources/touchbridge/` — unified CLI (serve, pair, logs, config, list-devices, challenge)
 - `mac/pam/` — PAM module (C, universal binary arm64+x86_64)
-- `mac/menubar/` — SwiftUI menu bar control app (status, pairing, settings)
+- `mac/menubar/` — SwiftUI menu bar app + privileged helper
+  - `TouchBridgeMenu/` — menu bar app (status, pairing, settings, install/uninstall)
+  - `TouchBridgeHelper/` — privileged helper daemon (SMAppService.daemon, XPC, root)
+  - `project.yml` — xcodegen config (auto-bundles daemon + PAM into app Resources)
 - `mac/authplugin/` — Swift auth plugin (stub)
 - `companion/ios/` — iOS/iPadOS companion app (SwiftUI)
   - `TouchBridge/Core/` — CompanionCoordinator, BLEClient, SecureEnclaveManager, ChallengeHandler

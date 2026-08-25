@@ -2,14 +2,14 @@ cask "touchbridge" do
   version "1.1.2"
   sha256 "da7af193723ad1d5ffd4739033c440916e9175183dc82e70899c0bcbbbf4b1e9"
 
-  url "https://github.com/HMAKT99/UnTouchID/releases/download/v#{version}/TouchBridge-#{version}.pkg"
+  url "https://github.com/whjvenyl/touch-bridge/releases/download/v#{version}/touchbridge-#{version}.pkg"
   name "TouchBridge"
-  desc "Use your phone's Face ID or fingerprint to authenticate on any Mac"
-  homepage "https://github.com/HMAKT99/UnTouchID"
+  desc "Approve macOS authentication from a nearby phone or wearable"
+  homepage "https://github.com/whjvenyl/touch-bridge"
 
   depends_on macos: :ventura
 
-  pkg "TouchBridge-#{version}.pkg"
+  pkg "touchbridge-#{version}.pkg"
 
   # IMPORTANT: remove the pam_touchbridge hook BEFORE deleting the module.
   # Deleting the .so while /etc/pam.d still references it makes sudo unable to
@@ -29,7 +29,7 @@ cask "touchbridge" do
   ]
 
   caveats <<~EOS
-    TouchBridge has been installed.
+    TouchBridge CLI has been installed.
 
     Activate the sudo hook (shows a diff and asks before changing anything):
       sudo bash /usr/local/share/touchbridge/patch-pam.sh
@@ -45,6 +45,9 @@ cask "touchbridge" do
       touchbridge serve                # production mode (requires paired phone)
       touchbridge pair                 # pair your phone first
 
-    More info: https://github.com/HMAKT99/UnTouchID
+    Prefer a GUI? Download the TouchBridge menu bar app from:
+      https://github.com/whjvenyl/touch-bridge/releases
+
+    More info: https://github.com/whjvenyl/touch-bridge
   EOS
 end

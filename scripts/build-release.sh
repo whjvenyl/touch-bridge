@@ -4,8 +4,8 @@ set -euo pipefail
 # Builds all release artifacts:
 # 1. Daemon binary (release mode)
 # 2. PAM module (universal binary)
-# 3. Menu bar app
-# 4. Installer .pkg
+# 3. Menu bar app (with bundled daemon + PAM + privileged helper)
+# 4. CLI installer .pkg (daemon + PAM + scripts, no GUI)
 # 5. .dmg with menu bar app
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -41,7 +41,7 @@ make -C mac/pam 2>&1 | tail -1
 cp mac/pam/pam_touchbridge.so "$BUILD_DIR/"
 echo "  ✓ PAM module built (universal binary)"
 
-# 3. Build menu bar app
+# 3. Build menu bar app (bundles daemon + PAM + helper)
 echo "[3/5] Building menu bar app..."
 cd "$PROJECT_DIR/mac/menubar"
 xcodegen generate 2>&1 | tail -1
@@ -57,8 +57,8 @@ else
     echo "  ⚠ Menu bar app not found — skipping"
 fi
 
-# 4. Create .pkg installer
-echo "[4/5] Creating installer package..."
+# 4. Create CLI .pkg installer (daemon + PAM + scripts, no GUI)
+echo "[4/5] Creating CLI installer package..."
 PKG_ROOT="$BUILD_DIR/pkg-root"
 mkdir -p "$PKG_ROOT/usr/local/bin"
 mkdir -p "$PKG_ROOT/usr/local/lib/pam"
@@ -92,7 +92,14 @@ chown "$ACTUAL_USER" "$PLIST_DST"
 chmod 755 /usr/local/bin/touchbridge
 chmod 444 /usr/local/lib/pam/pam_touchbridge.so
 
-echo "TouchBridge installed. Run the menu bar app to complete setup."
+echo "TouchBridge CLI installed."
+echo ""
+echo "Activate the sudo hook:"
+echo "  sudo bash /usr/local/share/touchbridge/patch-pam.sh"
+echo ""
+echo "Then start the daemon:"
+echo "  touchbridge serve"
+echo ""
 exit 0
 POSTINSTALL
 chmod +x "$BUILD_DIR/postinstall"
@@ -100,14 +107,14 @@ chmod +x "$BUILD_DIR/postinstall"
 pkgbuild \
     --root "$PKG_ROOT" \
     --scripts "$BUILD_DIR" \
-    --identifier "dev.touchbridge.pkg" \
+    --identifier "dev.touchbridge.cli" \
     --version "$VERSION" \
     --install-location "/" \
-    "$RELEASE_DIR/TouchBridge-$VERSION.pkg" 2>&1 | tail -1
+    "$RELEASE_DIR/touchbridge-$VERSION.pkg" 2>&1 | tail -1
 
-echo "  ✓ Installer package created"
+echo "  ✓ CLI installer package created"
 
-# 5. Create .dmg
+# 5. Create .dmg with menu bar app
 echo "[5/5] Creating disk image..."
 DMG_DIR="$BUILD_DIR/dmg"
 mkdir -p "$DMG_DIR"
@@ -115,19 +122,25 @@ mkdir -p "$DMG_DIR"
 if [ -d "$BUILD_DIR/TouchBridge.app" ]; then
     cp -R "$BUILD_DIR/TouchBridge.app" "$DMG_DIR/"
 fi
-cp "$RELEASE_DIR/TouchBridge-$VERSION.pkg" "$DMG_DIR/"
 
 # Create a simple README in the DMG
 cat > "$DMG_DIR/README.txt" << README
-TouchBridge — Use your phone's fingerprint on any Mac
+TouchBridge — Approve macOS authentication from a nearby phone or wearable
 
 INSTALL:
-  Option A: Double-click TouchBridge-$VERSION.pkg (recommended)
-  Option B: Drag TouchBridge.app to Applications
+  Drag TouchBridge.app to Applications, then open it.
+  The app bundles everything — no terminal needed.
 
-After installing, open TouchBridge from your menu bar.
+  TouchBridge will appear in your menu bar. Click it to install
+  the daemon and PAM module, then pair your phone.
 
-More info: https://github.com/HMAKT99/UnTouchID
+CLI USERS:
+  If you prefer the terminal, download touchbridge-$VERSION.pkg instead:
+    sudo installer -pkg touchbridge-$VERSION.pkg -target /
+    sudo bash /usr/local/share/touchbridge/patch-pam.sh
+    touchbridge serve
+
+More info: https://github.com/whjvenyl/touch-bridge
 README
 
 hdiutil create \
@@ -143,5 +156,8 @@ echo "  ✓ Disk image created"
 echo ""
 echo "=== Release Artifacts ==="
 ls -lh "$RELEASE_DIR/"
+echo ""
+echo "  touchbridge-$VERSION.pkg  — CLI installer (brew cask)"
+echo "  TouchBridge-$VERSION.dmg  — Menu bar app (direct download)"
 echo ""
 echo "Ready to upload to GitHub Releases."
