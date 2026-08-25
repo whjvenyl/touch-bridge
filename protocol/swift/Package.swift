@@ -19,9 +19,6 @@ let package = Package(
             name: "TouchBridgeProtocol",
             dependencies: [
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
-            ],
-            plugins: [
-                .plugin(name: "SwiftProtobufPlugin", package: "swift-protobuf"),
             ]
         ),
         .testTarget(

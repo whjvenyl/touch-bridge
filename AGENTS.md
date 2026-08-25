@@ -1,5 +1,15 @@
 # TouchBridge — Developer Guide
 
+## Prerequisites
+
+```bash
+# Required for building macOS/iOS components
+xcode-select --install
+
+# Required for protocol code generation (only when .proto changes)
+brew install protobuf swift-protobuf
+```
+
 ## Build
 
 ```bash

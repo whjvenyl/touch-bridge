@@ -18,8 +18,8 @@ dist/
 *.pem
 credentials.json
 
-# Generated protobuf code — regenerated at build time by SPM/Gradle plugins
-# The .proto source files ARE committed; generated output is not.
+# Generated protobuf code — regenerate with: bash protocol/generate.sh
+# Requires: brew install protobuf swift-protobuf
 protocol/swift/Sources/TouchBridgeProtocol/Generated/
 companion/android/app/src/main/java/dev/touchbridge/android/proto/
 companion/android/app/src/main/proto/
