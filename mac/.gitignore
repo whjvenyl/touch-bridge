@@ -1,0 +1,18 @@
+# Xcode
+xcuserdata/
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Generated Xcode projects (xcodegen)
+TouchBridgeMenu.xcodeproj/
+
+# C build artifacts
+*.so
+*_arm64.so
+*_x86_64.so

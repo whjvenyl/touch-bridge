@@ -1,0 +1,40 @@
+---
+title: TouchBridge
+description: Use your phone's fingerprint or Face ID to authenticate on any Mac — no $199 Touch ID keyboard required.
+---
+
+# TouchBridge
+
+Use your phone's fingerprint or Face ID to authenticate `sudo`, screensaver unlock, and other macOS auth prompts — instead of typing your password.
+
+Free, open source alternative to Apple's $199 Touch ID keyboard. Works with iPhone, Android, Apple Watch, or Wear OS.
+
+## How it works
+
+1. **Install** the daemon and PAM module on your Mac
+2. **Pair** your phone or watch via QR code
+3. **Authenticate** — when you run `sudo`, a biometric prompt appears on your phone
+
+The approval happens over Bluetooth Low Energy (BLE) with end-to-end encryption. Your private key never leaves the Secure Enclave (iOS) or Android Keystore.
+
+## Quick start
+
+```bash
+git clone https://github.com/HMAKT99/UnTouchID.git
+cd UnTouchID
+sudo bash scripts/install.sh
+```
+
+Then open the TouchBridge menu bar app and pair your device.
+
+## Features
+
+- **Biometric auth for sudo** — Face ID, Touch ID, fingerprint
+- **Multi-device** — pair multiple phones/watches, first response wins
+- **Fail-safe** — if your phone is unreachable, falls back to password
+- **Cross-platform** — iOS, Android, Apple Watch, Wear OS
+- **Open source** — MIT licensed, audit the code yourself
+
+:::note
+TouchBridge is in alpha. The iOS companion is production-ready. The Android companion has known protocol issues — see the [Architecture Review](/design/architecture-review).
+:::

@@ -1,0 +1,243 @@
+import SwiftUI
+
+struct MenuBarView: View {
+    @ObservedObject var state: MenuBarState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                Image(systemName: "touchid")
+                    .font(.title2)
+                    .foregroundStyle(headerColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("TouchBridge")
+                        .font(.headline)
+                    Text(statusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            Divider()
+
+            // Daemon status
+            daemonStatusSection
+
+            // Paired devices
+            if let status = state.status, !status.pairedDevices.isEmpty {
+                Divider()
+                pairedDevicesSection(status.pairedDevices)
+            }
+
+            // Recent auth events
+            if !state.recentEvents.isEmpty {
+                Divider()
+                recentActivitySection
+            }
+
+            Divider()
+
+            // Actions
+            actionsSection
+        }
+        .frame(width: 300)
+    }
+
+    // MARK: - Sections
+
+    private var daemonStatusSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Circle()
+                    .fill(state.isDaemonRunning ? .green : .red)
+                    .frame(width: 8, height: 8)
+                Text(state.isDaemonRunning ? "Daemon running" : "Daemon stopped")
+                    .font(.subheadline)
+                Spacer()
+                if state.isDaemonRunning {
+                    Button("Stop") { state.stopDaemon() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                } else {
+                    Button("Start") { state.startDaemon() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+            }
+
+            if let status = state.status {
+                HStack {
+                    Image(systemName: status.isAdvertising ? "antenna.radiowaves.left.and.right" : "antenna.slash")
+                        .font(.caption)
+                        .foregroundStyle(status.isAdvertising ? .green : .secondary)
+                    Text(status.isAdvertising ? "Advertising" : "Not advertising")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if status.isPairingActive {
+                        Label("Pairing…", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    private func pairedDevicesSection(_ devices: [DaemonClient.DaemonStatus.PairedDeviceInfo]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Paired Devices (\(devices.count))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 2)
+
+            ForEach(devices) { device in
+                HStack {
+                    Circle()
+                        .fill(device.isConnected ? .green : .secondary)
+                        .frame(width: 8, height: 8)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(device.displayName)
+                            .font(.subheadline)
+                        Text(device.isConnected ? "Connected" : "Disconnected")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button {
+                        state.unpairDevice(deviceID: device.deviceID)
+                    } label: {
+                        Image(systemName: "minus.circle")
+                            .foregroundStyle(.red)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Unpair \(device.displayName)")
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 4)
+            }
+
+            Button {
+                state.startPairing()
+            } label: {
+                Label("Pair New Device", systemImage: "plus.circle")
+                    .font(.subheadline)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+        }
+    }
+
+    private var recentActivitySection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Recent Activity")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+
+            ForEach(state.recentEvents.prefix(5)) { event in
+                HStack {
+                    Image(systemName: event.result == "VERIFIED" ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundStyle(event.result == "VERIFIED" ? .green : .red)
+                        .font(.caption)
+                    Text(event.surface)
+                        .font(.caption)
+                    Spacer()
+                    Text(formatTime(event.ts))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private var actionsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if state.status == nil && state.isDaemonRunning {
+                Button {
+                    state.startPairing()
+                } label: {
+                    Label("Pair New Device", systemImage: "plus.circle")
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+
+            Toggle(isOn: Binding(
+                get: { state.isAutoLaunchEnabled },
+                set: { _ in state.toggleAutoLaunch() }
+            )) {
+                Label("Launch at Login", systemImage: "power")
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+
+            Button {
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            } label: {
+                Label("Settings…", systemImage: "gear")
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+
+            Divider()
+
+            Button {
+                NSApplication.shared.terminate(nil)
+            } label: {
+                Text("Quit TouchBridge")
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private var headerColor: Color {
+        if !state.isInstalled { return .red }
+        if !state.isDaemonRunning { return .orange }
+        if let status = state.status, status.pairedDevices.contains(where: { $0.isConnected }) {
+            return .green
+        }
+        return .secondary
+    }
+
+    private var statusText: String {
+        if !state.isInstalled { return "Not installed" }
+        if !state.isDaemonRunning { return "Daemon stopped" }
+        if let status = state.status {
+            if status.pairedDevices.isEmpty { return "No devices paired" }
+            let connected = status.pairedDevices.filter(\.isConnected).count
+            if connected > 0 { return "Ready — \(connected) device(s) connected" }
+            return "Waiting for device…"
+        }
+        return "Connecting…"
+    }
+
+    private func formatTime(_ iso: String) -> String {
+        let parts = iso.split(separator: "T")
+        if parts.count == 2 {
+            return String(parts[1].prefix(5))
+        }
+        return iso
+    }
+}

@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+._*
+.fseventsd/
+
+# Editor
+*.swp
+*~
+
+# Release artifacts
+dist/
+*.zip
+*.tar.gz
+
+# Secrets — never commit
+.env
+*.key
+*.pem
+credentials.json

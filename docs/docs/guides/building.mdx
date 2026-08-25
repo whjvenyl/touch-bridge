@@ -1,0 +1,83 @@
+---
+title: Building from Source
+description: How to build each component of TouchBridge
+---
+
+# Building from Source
+
+TouchBridge has multiple components with different build systems. This guide covers each one.
+
+## Protocol package (Swift)
+
+```bash
+cd protocol/swift
+swift build
+swift test
+```
+
+## Daemon (Swift)
+
+```bash
+cd mac/daemon
+swift build
+swift test
+```
+
+### Run tests by suite
+
+```bash
+swift test --filter ChallengeManager
+swift test --filter Keychain
+swift test --filter SocketServer
+swift test --filter PolicyEngine
+swift test --filter PAMIntegration
+```
+
+### Build release
+
+```bash
+swift build -c release
+```
+
+## PAM module (C, universal binary)
+
+```bash
+make -C mac/pam
+```
+
+Produces `mac/pam/pam_touchbridge.so` (arm64 + x86_64).
+
+## Menubar app (Xcode)
+
+```bash
+cd mac/menubar
+xcodegen generate
+xcodebuild -project TouchBridgeMenu.xcodeproj -scheme TouchBridgeMenu -configuration Debug build
+```
+
+Requires [XcodeGen](https://github.com/yonaskolb/XcodeGen):
+```bash
+brew install xcodegen
+```
+
+## iOS companion (Xcode)
+
+Open `companion/ios/TouchBridge.xcodeproj` in Xcode and build.
+
+## Android companion (Gradle)
+
+```bash
+cd companion/android
+./gradlew :app:assembleDebug
+./gradlew :wear:assembleDebug
+```
+
+Requires Android Studio or Android SDK with build tools.
+
+## All-in-one build script
+
+```bash
+bash scripts/build-all.sh
+```
+
+This builds protocol, daemon, PAM, and menubar app. It does not build companion apps (they require Xcode/Android Studio).

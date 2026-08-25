@@ -1,0 +1,9 @@
+# Xcode
+xcuserdata/
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Generated Xcode projects (xcodegen)
+TouchBridge.xcodeproj/

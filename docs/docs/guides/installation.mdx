@@ -1,0 +1,63 @@
+---
+title: Installation
+description: Build and install TouchBridge from source
+---
+
+# Installation
+
+## Requirements
+
+| Component | Requirement |
+|-----------|-----------|
+| macOS | 13.0 (Ventura) or newer |
+| Xcode | 15.0 or newer (for menubar app) |
+| Swift | 5.9 or newer |
+| Bluetooth | BLE support (all modern Macs) |
+| Companion | iOS 16+, Android 8+ |
+
+## Build from source (recommended)
+
+```bash
+git clone https://github.com/HMAKT99/UnTouchID.git
+cd UnTouchID
+
+# Build everything and install
+sudo bash scripts/install.sh
+```
+
+The install script:
+- Builds the daemon (`touchbridged`) and CLI (`touchbridge-test`)
+- Builds the PAM module as a universal binary
+- Ad-hoc signs the PAM module
+- Installs to `/usr/local/bin/` and `/usr/local/lib/pam/`
+- Creates the LaunchAgent for auto-start
+- Patches `/etc/pam.d/sudo` (with backup and confirmation)
+
+## Pair your device
+
+1. Open the **TouchBridge** menu bar app
+2. Click **Pair New Device**
+3. Scan the QR code with the TouchBridge app on your phone
+4. Approve the biometric prompt on your phone
+
+Alternatively, use the CLI:
+```bash
+touchbridge-test pair
+```
+
+## Test it
+
+```bash
+sudo ls
+# → Biometric prompt appears on your phone
+# → Approve → sudo succeeds
+# → Deny or timeout → falls through to password
+```
+
+## Uninstall
+
+```bash
+sudo bash scripts/uninstall.sh
+```
+
+This restores your original PAM configuration and removes all TouchBridge files.
