@@ -13,21 +13,6 @@ struct MenuBarView: View {
             }
         }
         .frame(width: 320)
-        .background {
-            // Hidden buttons for keyboard shortcuts while popover is open
-            Group {
-                Button("") {
-                    openSettingsWindow()
-                }
-                .keyboardShortcut(",", modifiers: .command)
-
-                Button("") {
-                    NSApplication.shared.terminate(nil)
-                }
-                .keyboardShortcut("q", modifiers: .command)
-            }
-            .hidden()
-        }
     }
 
     // MARK: - Not installed
@@ -300,7 +285,8 @@ struct MenuBarView: View {
             .padding(.vertical, 4)
 
             Button {
-                openSettingsWindow()
+                NotificationCenter.default.post(name: .openSettings, object: nil)
+                NSApplication.shared.deactivate()
             } label: {
                 HStack {
                     Label("Settings…", systemImage: "gear")
@@ -338,30 +324,6 @@ struct MenuBarView: View {
     }
 
     // MARK: - Helpers
-
-    /// Open the settings window, or focus it if already open.
-    private func openSettingsWindow() {
-        // Find existing settings windows by checking for windows that
-        // are not panels (menu bar popover, pairing window) and contain
-        // our SettingsWindowView. We check by looking for windows with
-        // a toolbar (NavigationSplitView adds one) that are regular windows.
-        for window in NSApplication.shared.windows {
-            // Skip panels — those are the menu bar popover and other aux windows
-            if window is NSPanel { continue }
-            // Skip windows without a toolbar (pairing window has no toolbar)
-            if window.toolbar == nil { continue }
-            // This is our settings window — focus it
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-            NSApplication.shared.deactivate()
-            return
-        }
-
-        // No existing settings window — open a new one
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        openWindow(id: "settings")
-        NSApplication.shared.deactivate()
-    }
 
     private var headerColor: Color {
         if !state.isInstalled { return .red }
