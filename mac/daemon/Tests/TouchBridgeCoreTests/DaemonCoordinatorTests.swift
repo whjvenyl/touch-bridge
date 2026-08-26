@@ -11,6 +11,13 @@ import CryptoKit
 ///
 /// Records all outgoing calls (challenges, pairing responses, session keys) and
 /// exposes `simulate*` methods to drive incoming BLE events without real hardware.
+///
+/// Simulates the real BLEServer's transmit-queue behavior: when
+/// `simulateTransmitQueueFull` is true, `sendChallenge` queues the notification
+/// instead of delivering it immediately, and returns `true` (matching the real
+/// `sendOrQueue` which always returns `true` since the data will be delivered
+/// on flush). Call `flushQueuedChallenges()` to simulate the BLE subsystem
+/// becoming ready again.
 final class MockBLEServer: BLEServerInterface, @unchecked Sendable {
     weak var delegate: BLEServerDelegate?
 
@@ -22,7 +29,16 @@ final class MockBLEServer: BLEServerInterface, @unchecked Sendable {
     // Configurable RSSI per central (default -60 dBm)
     var rssiValues: [UUID: Int] = [:]
 
-    // Set to false to simulate BLE transmit queue full
+    // When true, sendChallenge queues the notification instead of recording it
+    // in sentChallenges immediately. Matches the real BLEServer's transmit-queue-full
+    // behavior. Call flushQueuedChallenges() to deliver them.
+    var simulateTransmitQueueFull: Bool = false
+
+    // Queued challenges waiting for flush
+    private var queuedChallenges: [(data: Data, centralID: UUID)] = []
+
+    // Legacy flag — when true, sendChallenge returns false (hard send failure).
+    // Use simulateTransmitQueueFull instead for the realistic queue-retry path.
     var sendSucceeds: Bool = true
 
     var isAdvertising: Bool = false
@@ -32,6 +48,12 @@ final class MockBLEServer: BLEServerInterface, @unchecked Sendable {
 
     @discardableResult
     func sendChallenge(_ data: Data, to centralID: UUID) -> Bool {
+        if simulateTransmitQueueFull {
+            // Queue for later delivery — matches real BLEServer.sendOrQueue behavior.
+            // Returns true because the data WILL be delivered on flush.
+            queuedChallenges.append((data, centralID))
+            return true
+        }
         sentChallenges.append((data, centralID))
         return sendSucceeds
     }
@@ -53,6 +75,20 @@ final class MockBLEServer: BLEServerInterface, @unchecked Sendable {
     func averageRSSI(for centralID: UUID) -> Int? {
         rssiValues[centralID] ?? -60
     }
+
+    // MARK: - Transmit queue simulation
+
+    /// Flush all queued challenges — simulates the BLE subsystem becoming ready.
+    /// Moves queued challenges into `sentChallenges` so tests can inspect them.
+    func flushQueuedChallenges() {
+        for queued in queuedChallenges {
+            sentChallenges.append(queued)
+        }
+        queuedChallenges.removeAll()
+    }
+
+    /// Number of challenges currently queued (not yet delivered).
+    var queuedChallengeCount: Int { queuedChallenges.count }
 
     // MARK: - Test event simulators
 
@@ -116,6 +152,43 @@ final class CompanionSimulator: @unchecked Sendable {
         self.signingPrivateKey = SecKeyCreateRandomKey(attrs as CFDictionary, &cfErr)!
         let pub = SecKeyCopyPublicKey(signingPrivateKey)!
         self.signingPublicKeyData = SecKeyCopyExternalRepresentation(pub, &cfErr)! as Data
+    }
+
+    /// Reconnect initializer — reuses the same signing key and deviceID but
+    /// gets a fresh centralID (simulating a new BLE connection).
+    convenience init(
+        reconnecting original: CompanionSimulator,
+        newCentralID: UUID = UUID()
+    ) {
+        self.init(
+            centralID: newCentralID,
+            deviceID: original.deviceID,
+            deviceName: original.deviceName,
+            signingPrivateKey: original.signingPrivateKey,
+            signingPublicKeyData: original.signingPublicKeyData
+        )
+    }
+
+    /// Private initializer that accepts an existing signing key (for reconnect).
+    private init(
+        centralID: UUID,
+        deviceID: String,
+        deviceName: String,
+        signingPrivateKey: SecKey,
+        signingPublicKeyData: Data
+    ) {
+        self.centralID = centralID
+        self.deviceID = deviceID
+        self.deviceName = deviceName
+        self.signingPrivateKey = signingPrivateKey
+        self.signingPublicKeyData = signingPublicKeyData
+    }
+
+    /// Reset ECDH session state (simulates dropping the BLE link).
+    func resetSession() {
+        sessionCrypto = nil
+        ecdhPrivateKey = nil
+        daemonEphemeralPubKey = nil
     }
 
     // MARK: - ECDH
@@ -875,13 +948,14 @@ enum TestSetupError: Error { case ecdhFailed }
     #expect(reason == "timeout")
 }
 
-@Test func authBLESendFailureResultsInImmediateFailure() async throws {
+@Test func authBLEHardSendFailureResultsInImmediateFailure() async throws {
     let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
     try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
 
-    // Simulate BLE transmit queue full — sendChallenge returns false
+    // Simulate a hard BLE send failure (e.g. central not subscribed).
+    // This is NOT the transmit-queue-full case — that's tested separately.
     bleServer.sendSucceeds = false
 
     let start = Date()
@@ -891,6 +965,221 @@ enum TestSetupError: Error { case ecdhFailed }
     #expect(result.success == false)
     #expect(result.reason == "challenge_failed")
     #expect(elapsed < 1.0)  // must fail fast, not after the full 5s timeout
+}
+
+// MARK: - BLE Transmit Queue Retry Tests
+
+@Test func authTransmitQueueFullThenFlushSucceeds() async throws {
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
+    let companion = CompanionSimulator()
+    try register(companion, in: keychain)
+    try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
+
+    // Simulate BLE transmit queue full — challenge is queued, not sent immediately.
+    // sendChallenge returns true (data will be delivered on flush).
+    bleServer.simulateTransmitQueueFull = true
+
+    async let authResult = coordinator.authenticateFromPAM(
+        user: "arun", service: "sudo", pid: 1, timeout: 5.0
+    )
+
+    // Give the coordinator time to issue the challenge (it goes into the queue)
+    try await Task.sleep(nanoseconds: 150_000_000)
+
+    // Challenge should be queued, not yet in sentChallenges
+    #expect(bleServer.queuedChallengeCount == 1)
+    #expect(bleServer.sentChallenges.isEmpty)
+
+    // Flush the queue — simulates BLE subsystem becoming ready
+    bleServer.simulateTransmitQueueFull = false
+    bleServer.flushQueuedChallenges()
+
+    // Now the challenge is in sentChallenges
+    #expect(bleServer.sentChallenges.count == 1)
+    guard let sent = bleServer.sentChallenges.last else {
+        Issue.record("No challenge was flushed")
+        return
+    }
+    #expect(sent.centralID == companion.centralID)
+
+    // Companion signs and responds
+    let response = try companion.respondToChallenge(sent.data)
+    bleServer.simulateResponse(response, from: companion.centralID)
+
+    let result = await authResult
+    #expect(result.success == true)
+    #expect(result.reason == nil)
+}
+
+@Test func authTransmitQueueFullWithMultipleFlushes() async throws {
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
+    let companion = CompanionSimulator()
+    try register(companion, in: keychain)
+    try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
+
+    bleServer.simulateTransmitQueueFull = true
+
+    async let authResult = coordinator.authenticateFromPAM(
+        user: "arun", service: "sudo", pid: 1, timeout: 5.0
+    )
+
+    try await Task.sleep(nanoseconds: 150_000_000)
+
+    // Flush in two batches — first flush is empty (nothing new queued),
+    // second flush delivers the challenge
+    bleServer.flushQueuedChallenges() // first flush
+    #expect(bleServer.sentChallenges.count == 1)
+
+    // Companion responds
+    guard let sent = bleServer.sentChallenges.last else {
+        Issue.record("No challenge was flushed")
+        return
+    }
+    let response = try companion.respondToChallenge(sent.data)
+    bleServer.simulateResponse(response, from: companion.centralID)
+
+    let result = await authResult
+    #expect(result.success == true)
+}
+
+@Test func authTransmitQueueFullMultipleDevicesFirstResponseWins() async throws {
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
+    let c1 = CompanionSimulator(deviceName: "iPhone 1")
+    let c2 = CompanionSimulator(deviceName: "iPhone 2")
+    try register(c1, in: keychain)
+    try register(c2, in: keychain)
+    try await fullyConnect(companion: c1, to: coordinator, via: bleServer)
+    try await fullyConnect(companion: c2, to: coordinator, via: bleServer)
+
+    // Both devices' challenges get queued
+    bleServer.simulateTransmitQueueFull = true
+
+    async let authResult = coordinator.authenticateFromPAM(
+        user: "arun", service: "sudo", pid: 1, timeout: 5.0
+    )
+
+    try await Task.sleep(nanoseconds: 150_000_000)
+
+    // Both challenges queued
+    #expect(bleServer.queuedChallengeCount == 2)
+
+    // Flush — both challenges delivered
+    bleServer.simulateTransmitQueueFull = false
+    bleServer.flushQueuedChallenges()
+    #expect(bleServer.sentChallenges.count == 2)
+
+    // Find each companion's challenge by centralID
+    guard let sent1 = bleServer.sentChallenges.first(where: { $0.centralID == c1.centralID }) else {
+        Issue.record("No challenge for c1")
+        return
+    }
+    let response1 = try c1.respondToChallenge(sent1.data)
+    bleServer.simulateResponse(response1, from: c1.centralID)
+
+    let result = await authResult
+    #expect(result.success == true)
+    #expect(result.reason == nil)
+}
+
+// MARK: - Reconnect Tests
+
+@Test func reconnectWithFreshECDHReidentifiesAndAuths() async throws {
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
+    let companion = CompanionSimulator()
+    try register(companion, in: keychain)
+
+    // First connection — full setup
+    try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
+    #expect(coordinator.identifiedCentrals.contains(companion.centralID))
+
+    // Disconnect (BLE link drops)
+    bleServer.simulateDisconnect(companion.centralID)
+    #expect(coordinator.readyCentrals.isEmpty)
+
+    // Reconnect with a fresh BLE connection (new centralID) but same signing key
+    let reconnected = CompanionSimulator(reconnecting: companion)
+
+    bleServer.simulateConnect(reconnected.centralID)
+    let clientKey = reconnected.ecdhPublicKeyData()
+    guard let serverKey = bleServer.simulateSessionKey(clientKey, from: reconnected.centralID) else {
+        Issue.record("ECDH failed on reconnect")
+        return
+    }
+    try reconnected.completeECDH(daemonPublicKeyData: serverKey)
+
+    // Re-identify with the same deviceID — daemon should recognize it
+    let identifyData = try reconnected.makeIdentifyData()
+    bleServer.simulatePairingData(identifyData, from: reconnected.centralID)
+    try await Task.sleep(nanoseconds: 200_000_000)
+
+    #expect(coordinator.identifiedCentrals.contains(reconnected.centralID))
+
+    // Auth should work after reconnect
+    async let authResult = coordinator.authenticateFromPAM(
+        user: "arun", service: "sudo", pid: 1, timeout: 5.0
+    )
+    try await Task.sleep(nanoseconds: 150_000_000)
+
+    guard let sent = bleServer.sentChallenges.last else {
+        Issue.record("No challenge sent after reconnect")
+        return
+    }
+    let response = try reconnected.respondToChallenge(sent.data)
+    bleServer.simulateResponse(response, from: reconnected.centralID)
+
+    let result = await authResult
+    #expect(result.success == true)
+}
+
+// MARK: - Cross-Central Response Tests
+
+@Test func authResponseWithForgedSignatureFromOtherCentralFailsAuth() async throws {
+    // This test documents the current behavior: a forged response with a bad
+    // signature from a different central causes the auth to fail immediately
+    // with invalid_signature. The daemon processes responses from any connected
+    // central and verifies the signature against the pinned public key.
+    //
+    // A forged response with a garbage signature fails verification, which
+    // resumes the pending continuation with .invalidSignature — the legitimate
+    // companion never gets a chance to respond.
+    //
+    // This is a known limitation: an attacker who knows the challengeID (which
+    // is sent in plaintext in the BLE notification) and is connected as a BLE
+    // central could send a forged response to cause a DoS. Mitigation requires
+    // checking that the response came from the same central that was challenged.
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
+    let companion = CompanionSimulator()
+    try register(companion, in: keychain)
+    try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
+
+    async let authResult = coordinator.authenticateFromPAM(
+        user: "arun", service: "sudo", pid: 1, timeout: 3.0
+    )
+    try await Task.sleep(nanoseconds: 150_000_000)
+
+    guard let sent = bleServer.sentChallenges.last else {
+        Issue.record("No challenge sent")
+        return
+    }
+
+    // Extract the challengeID from the wire data
+    let payload = sent.data.dropFirst(2)
+    let challengeMsg = try WireFormat.decodePayload(TBChallengeIssued.self, from: payload)
+
+    // Forge a response with the correct challengeID but a garbage signature,
+    // sent from a different central UUID (simulating an attacker)
+    let forged = TBChallengeResponse.with {
+        $0.challengeID = challengeMsg.challengeID
+        $0.signature = Data(repeating: 0xFF, count: 64)
+        $0.deviceID = companion.deviceID
+    }
+    let forgedWire = try WireFormat.encode(.challengeResponse, forged)
+    let attackerCentral = UUID()
+    bleServer.simulateResponse(forgedWire, from: attackerCentral)
+
+    let result = await authResult
+    #expect(result.success == false)
+    #expect(result.reason == "invalid_signature")
 }
 
 @Test func authResponseWithWrongDeviceIDIsIgnored() async throws {
