@@ -67,12 +67,13 @@ public struct WireFormat: Sendable {
     }
 
     /// Decode a protobuf payload into a specific message type.
-    public static func decodeMessage<T: Message>(_ payloadType: T.Type, from data: Data) throws -> T {
+    public static func decodePayload<T: Message>(_ payloadType: T.Type, from data: Data) throws -> T {
         return try T(serializedBytes: data)
     }
 
-    /// Alias for decodeMessage — kept for backward compatibility with existing call sites.
-    public static func decodePayload<T: Message>(_ payloadType: T.Type, from data: Data) throws -> T {
-        return try T(serializedBytes: data)
+    /// Backward-compatible alias for `decodePayload`. All call sites use
+    /// `decodePayload`; this is kept for external consumers.
+    public static func decodeMessage<T: Message>(_ payloadType: T.Type, from data: Data) throws -> T {
+        return try decodePayload(payloadType, from: data)
     }
 }
