@@ -26,30 +26,48 @@ public struct KeychainStore: Sendable {
     }
 
     /// Store a paired device's public key and metadata.
+    ///
+    /// Uses `SecItemUpdate` first (atomic — the entry is never missing), and
+    /// only falls back to `SecItemAdd` if the item doesn't exist yet. This
+    /// avoids the delete-then-add window where a crash would lose the entry.
     public func storePairedDevice(_ device: PairedDevice) throws {
         let data = try JSONEncoder().encode(device)
 
-        // Delete any existing entry for this device first
-        let deleteQuery: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: device.deviceID,
         ]
-        SecItemDelete(deleteQuery as CFDictionary)
 
-        let addQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: device.deviceID,
+        let attributesToUpdate: [String: Any] = [
             kSecAttrLabel as String: "TouchBridge: \(device.displayName)",
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
             kSecValueData as String: data,
         ]
 
-        let status = SecItemAdd(addQuery as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw KeychainStoreError.storeFailed(status)
+        // Try to update the existing entry atomically.
+        let updateStatus = SecItemUpdate(query as CFDictionary, attributesToUpdate as CFDictionary)
+
+        if updateStatus == errSecSuccess {
+            return
         }
+
+        // Item doesn't exist — create it.
+        if updateStatus == errSecItemNotFound {
+            var addQuery = query
+            addQuery[kSecAttrLabel as String] = "TouchBridge: \(device.displayName)"
+            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            addQuery[kSecValueData as String] = data
+
+            let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+            guard addStatus == errSecSuccess else {
+                throw KeychainStoreError.storeFailed(addStatus)
+            }
+            return
+        }
+
+        // Unexpected error from SecItemUpdate.
+        throw KeychainStoreError.storeFailed(updateStatus)
     }
 
     /// Retrieve a paired device record by device ID.

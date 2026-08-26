@@ -56,6 +56,16 @@ public protocol BLEServerDelegate: AnyObject {
     func bleServer(_ server: any BLEServerInterface, didReceiveResponse data: Data, from centralID: UUID)
 }
 
+// MARK: - Pending Notification
+
+/// A notification that couldn't be sent immediately (BLE transmit queue full).
+/// Queued and retried when `peripheralManagerIsReady` fires.
+struct PendingNotification {
+    let data: Data
+    let characteristic: CBMutableCharacteristic
+    let central: CBCentral
+}
+
 // MARK: - Connected Central Tracking
 
 /// Tracks per-central connection state.
@@ -110,6 +120,11 @@ public class BLEServer: NSObject, BLEServerInterface {
     private let centralsLock = NSLock()
     private var connectedCentrals: [UUID: ConnectedCentral] = [:]
 
+    // Pending notifications that couldn't be sent because the BLE transmit queue was full.
+    // Retried when peripheralManagerIsReady(toUpdateSubscribers:) fires.
+    private let pendingLock = NSLock()
+    private var pendingNotifications: [PendingNotification] = []
+
     // RSSI proximity gate
     private let rssiThreshold: Int
 
@@ -135,6 +150,20 @@ public class BLEServer: NSObject, BLEServerInterface {
     }
 
     // MARK: - Public API
+
+    /// Try to send a notification, queuing it for retry if the BLE transmit queue is full.
+    private func sendOrQueue(_ data: Data, for char: CBMutableCharacteristic, to central: CBCentral) -> Bool {
+        let sent = peripheralManager.updateValue(data, for: char, onSubscribedCentrals: [central])
+        if !sent {
+            pendingLock.withLock {
+                pendingNotifications.append(PendingNotification(
+                    data: data, characteristic: char, central: central
+                ))
+            }
+            logger.warning("Notification queued for retry (transmit queue full)")
+        }
+        return sent
+    }
 
     /// Start advertising the TouchBridge BLE service.
     public func startAdvertising() {
@@ -175,16 +204,7 @@ public class BLEServer: NSObject, BLEServerInterface {
             return false
         }
 
-        let sent = peripheralManager.updateValue(
-            data,
-            for: char,
-            onSubscribedCentrals: [info.central]
-        )
-
-        if !sent {
-            logger.warning("Challenge notification queued (transmit queue full)")
-        }
-        return sent
+        return sendOrQueue(data, for: char, to: info.central)
     }
 
     /// Send pairing data to a specific connected central.
@@ -197,11 +217,7 @@ public class BLEServer: NSObject, BLEServerInterface {
             return false
         }
 
-        return peripheralManager.updateValue(
-            data,
-            for: char,
-            onSubscribedCentrals: [info.central]
-        )
+        return sendOrQueue(data, for: char, to: info.central)
     }
 
     /// Send session key data to a specific connected central.
@@ -214,11 +230,7 @@ public class BLEServer: NSObject, BLEServerInterface {
             return false
         }
 
-        return peripheralManager.updateValue(
-            data,
-            for: char,
-            onSubscribedCentrals: [info.central]
-        )
+        return sendOrQueue(data, for: char, to: info.central)
     }
 
     /// Get the list of connected central UUIDs.
@@ -455,8 +467,31 @@ extension BLEServer: CBPeripheralManagerDelegate {
     }
 
     public func peripheralManagerIsReady(toUpdateSubscribers peripheral: CBPeripheralManager) {
-        // Called when the transmit queue has space again after a failed updateValue.
-        // In a production implementation, we'd retry queued notifications here.
-        logger.info("Transmit queue ready for more notifications")
+        // Transmit queue has space again — flush pending notifications.
+        let pending = pendingLock.withLock {
+            let taken = pendingNotifications
+            pendingNotifications.removeAll()
+            return taken
+        }
+
+        for notification in pending {
+            let sent = peripheralManager.updateValue(
+                notification.data,
+                for: notification.characteristic,
+                onSubscribedCentrals: [notification.central]
+            )
+            if !sent {
+                // Queue still full — re-queue and wait for the next ready callback.
+                pendingLock.withLock {
+                    pendingNotifications.append(notification)
+                }
+                logger.warning("Transmit queue still full after retry — re-queued")
+                return
+            }
+        }
+
+        if !pending.isEmpty {
+            logger.info("Flushed \(pending.count) pending notification(s)")
+        }
     }
 }

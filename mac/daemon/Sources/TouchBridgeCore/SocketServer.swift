@@ -210,11 +210,16 @@ public final class SocketServer: @unchecked Sendable {
 
     /// Stop the socket server.
     public func stop() {
-        acceptSource?.cancel()
-        acceptSource = nil
-        if serverFD >= 0 {
-            close(serverFD)
-            serverFD = -1
+        // FD cleanup is dispatched onto the serial queue so it's serialized
+        // with the DispatchSource cancel handler — prevents a double-close
+        // race where both stop() and the cancel handler close serverFD.
+        queue.sync {
+            acceptSource?.cancel()
+            acceptSource = nil
+            if serverFD >= 0 {
+                close(serverFD)
+                serverFD = -1
+            }
         }
         unlink(socketPath)
         isListening = false

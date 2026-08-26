@@ -3,6 +3,14 @@ import TouchBridgeProtocol
 
 /// A single audit log entry. Never contains nonce values.
 public struct AuditEntry: Codable, Sendable {
+    /// Shared formatter — ISO8601DateFormatter is thread-safe, so a single
+    /// static instance avoids allocating one per entry.
+    private static let timestampFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
     public let ts: String
     public let sessionID: String
     public let surface: String
@@ -38,9 +46,7 @@ public struct AuditEntry: Codable, Sendable {
         rssi: Int? = nil,
         latencyMs: Int? = nil
     ) {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        self.ts = formatter.string(from: Date())
+        self.ts = Self.timestampFormatter.string(from: Date())
 
         self.sessionID = sessionID
         self.surface = surface
