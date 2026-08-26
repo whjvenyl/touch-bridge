@@ -13,6 +13,21 @@ struct MenuBarView: View {
             }
         }
         .frame(width: 320)
+        .background {
+            // Hidden buttons for keyboard shortcuts while popover is open
+            Group {
+                Button("") {
+                    openSettingsWindow()
+                }
+                .keyboardShortcut(",", modifiers: .command)
+
+                Button("") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .keyboardShortcut("q", modifiers: .command)
+            }
+            .hidden()
+        }
     }
 
     // MARK: - Not installed
@@ -287,7 +302,13 @@ struct MenuBarView: View {
             Button {
                 openSettingsWindow()
             } label: {
-                Label("Settings…", systemImage: "gear")
+                HStack {
+                    Label("Settings…", systemImage: "gear")
+                    Spacer()
+                    Text("⌘,")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 16)
@@ -303,7 +324,13 @@ struct MenuBarView: View {
         Button {
             NSApplication.shared.terminate(nil)
         } label: {
-            Text("Quit TouchBridge")
+            HStack {
+                Text("Quit TouchBridge")
+                Spacer()
+                Text("⌘Q")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
@@ -314,21 +341,25 @@ struct MenuBarView: View {
 
     /// Open the settings window, or focus it if already open.
     private func openSettingsWindow() {
-        // Check if a settings window is already open
-        let settingsWindows = NSApplication.shared.windows.filter { window in
-            window.title.contains("Settings") || window.title.contains("TouchBridge Settings")
-        }
-
-        if let window = settingsWindows.first {
-            // Focus the existing window
-            window.makeKeyAndOrderFront(nil)
+        // Find existing settings windows by checking for windows that
+        // are not panels (menu bar popover, pairing window) and contain
+        // our SettingsWindowView. We check by looking for windows with
+        // a toolbar (NavigationSplitView adds one) that are regular windows.
+        for window in NSApplication.shared.windows {
+            // Skip panels — those are the menu bar popover and other aux windows
+            if window is NSPanel { continue }
+            // Skip windows without a toolbar (pairing window has no toolbar)
+            if window.toolbar == nil { continue }
+            // This is our settings window — focus it
             NSApplication.shared.activate(ignoringOtherApps: true)
-        } else {
-            // Open a new settings window
-            openWindow(id: "settings")
+            window.makeKeyAndOrderFront(nil)
+            NSApplication.shared.deactivate()
+            return
         }
 
-        // Close the menu bar popover
+        // No existing settings window — open a new one
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        openWindow(id: "settings")
         NSApplication.shared.deactivate()
     }
 
