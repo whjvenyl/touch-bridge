@@ -101,6 +101,10 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
         _uiState.value = _uiState.value.copy(statusMessage = "Connecting...")
     }
 
+    // Pending pair request — stored when completePairing is called, sent after
+    // BLE connection is established (pairingChar is only available after service discovery).
+    private var pendingPairRequest: ByteArray? = null
+
     fun completePairing(macName: String, macId: String, pairingToken: ByteArray? = null) {
         android.util.Log.i("TouchBridgeVM", "Completing pairing for: $macName ($macId)")
         val prefs = context.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
@@ -117,28 +121,29 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
         // Generate a stable device ID for this Android device if not already set
         val deviceID = getOrCreateDeviceID()
 
-        // Send pair request to daemon via BLE (with pairing token from QR)
+        // Build the pair request payload (with pairing token from QR).
+        // Store it — it will be sent after BLE connection is established,
+        // because pairingChar is only available after service discovery.
         val publicKey = try {
             keystoreManager.getPublicKey(Constants.SIGNING_KEY_ALIAS)
         } catch (e: Exception) { null }
         if (publicKey != null) {
-            val pairRequest = dev.touchbridge.android.core.WireFormat.buildPairRequest(
+            pendingPairRequest = dev.touchbridge.android.core.WireFormat.buildPairRequest(
                 deviceName = android.os.Build.MODEL,
                 publicKey = publicKey,
                 deviceID = deviceID,
                 pairingToken = pairingToken ?: ByteArray(0)
             )
-            bleClient.sendPairingData(pairRequest)
-            Log.i("TouchBridgeVM", "Sent pair request with token=${pairingToken != null}")
+            Log.i("TouchBridgeVM", "Pair request prepared with token=${pairingToken != null}")
         }
 
         _uiState.value = _uiState.value.copy(
             isPaired = true,
             pairedMacName = macName,
-            statusMessage = "Paired with $macName"
+            statusMessage = "Pairing with $macName…"
         )
 
-        // Immediately start scanning with the new ID
+        // Start scanning — the pair request will be sent once connected.
         startScanning()
     }
 
@@ -224,6 +229,14 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
         )
 
         if (connected) {
+            // Send pending pair request first (if any), then initiate ECDH.
+            // The write queue ensures both are sent in order.
+            pendingPairRequest?.let { req ->
+                bleClient.sendPairingData(req)
+                pendingPairRequest = null
+                Log.i("TouchBridgeVM", "Sent pending pair request")
+            }
+
             // Initiate ECDH key exchange
             val publicKey = challengeHandler.initiateECDH()
             bleClient.sendSessionKey(publicKey)

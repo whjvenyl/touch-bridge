@@ -143,6 +143,11 @@ class BLEClient(private val context: Context) {
 
     fun connect(deviceAddress: String) {
         val device = discoveredDevices[deviceAddress] ?: return
+        // Guard against double-connect — if we're already connected or connecting, skip.
+        if (gatt != null) {
+            Log.i(TAG, "Already connected/connecting — skipping connect to $deviceAddress")
+            return
+        }
         stopScanning()
         
         // Connect on main thread for better stability across Android versions
@@ -160,6 +165,9 @@ class BLEClient(private val context: Context) {
         challengeChar = null
         responseChar = null
         pairingChar = null
+        writeQueue.clear()
+        isWriting = false
+        pendingNotifyCount = 0
     }
 
     // MARK: - Write Operations
