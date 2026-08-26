@@ -51,10 +51,12 @@ object WireFormat {
     }
 
     /// Build an identify message: [version][type=6] + protobuf Identify.
-    fun buildIdentify(deviceID: String, deviceName: String): ByteArray {
+    /// The signature proves possession of the paired private key.
+    fun buildIdentify(deviceID: String, deviceName: String, signature: ByteArray): ByteArray {
         val msg = Identify.newBuilder()
             .setDeviceId(deviceID)
             .setDeviceName(deviceName)
+            .setSignature(ByteString.copyFrom(signature))
             .build()
         return encode(TYPE_IDENTIFY, msg.toByteArray())
     }

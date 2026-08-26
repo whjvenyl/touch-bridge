@@ -81,4 +81,9 @@ dependencies {
 
     // Protobuf runtime
     implementation("com.google.protobuf:protobuf-kotlin:4.31.1")
+
+    // Unit testing
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
+    testImplementation("com.google.protobuf:protobuf-kotlin:4.31.1")
 }

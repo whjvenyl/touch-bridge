@@ -103,6 +103,27 @@ public final class PolicyEngine: Sendable {
         sessions.clear()
     }
 
+    /// Kill-switch: when active, `authenticateFromPAM` returns immediately with
+    /// a forced-password fallback, bypassing all BLE challenge dispatch.
+    ///
+    /// Triggered by either:
+    ///   - Environment variable `TOUCHBRIDGE_FORCE_PASSWORD=1`
+    ///   - Plist key `ForcePasswordFallback: true`
+    ///
+    /// This is the sudo-lockout rollback path — if a policy or daemon regression
+    /// breaks `sudo`, the user can set this and reboot to restore password auth
+    /// without uninstalling TouchBridge.
+    public func forcePasswordFallback() -> Bool {
+        if ProcessInfo.processInfo.environment["TOUCHBRIDGE_FORCE_PASSWORD"] == "1" {
+            return true
+        }
+        if let dict = NSDictionary(contentsOfFile: plistPath),
+           let force = dict["ForcePasswordFallback"] as? Bool {
+            return force
+        }
+        return false
+    }
+
     /// Authentication timeout in seconds. Defaults to 15s if not configured.
     public func authTimeout() -> TimeInterval {
         guard let dict = NSDictionary(contentsOfFile: plistPath),

@@ -28,7 +28,9 @@ class KeystoreManager {
     /**
      * Generate a new ECDSA P-256 key pair in the Android Keystore.
      *
-     * The key is hardware-backed and requires biometric auth for signing.
+     * The key is hardware-backed. Biometric auth is enforced at the app
+     * layer (BiometricPrompt) for challenge responses, not at the OS level.
+     * This allows the identify signature to work without a biometric prompt.
      * Returns the public key in X9.62 uncompressed format (65 bytes).
      */
     fun generateKeyPair(alias: String): ByteArray {
@@ -41,7 +43,12 @@ class KeystoreManager {
         )
             .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
             .setDigests(KeyProperties.DIGEST_SHA256)
-            .setUserAuthenticationRequired(true)
+            // Note: setUserAuthenticationRequired is NOT set here.
+            // The BiometricPrompt in the UI layer gates challenge responses
+            // at the app level — the user must approve before signature.sign().
+            // This allows the identify signature to work on reconnect without
+            // triggering a biometric prompt, while still requiring biometric
+            // approval for sudo authorization.
             .setInvalidatedByBiometricEnrollment(true)
             // Try StrongBox first (hardware security module, like Apple's Secure Enclave)
             // Falls back to TEE if StrongBox not available

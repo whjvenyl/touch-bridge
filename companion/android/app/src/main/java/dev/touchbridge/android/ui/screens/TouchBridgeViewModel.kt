@@ -260,11 +260,24 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
 
         // After ECDH, send identify so the daemon recognizes this device
         // without requiring full re-pairing on reconnect.
+        // The identify includes a signature proving possession of the paired
+        // private key — the daemon verifies it against the pinned public key.
         val deviceID = getDeviceID()
         val deviceName = android.os.Build.MODEL
         if (deviceID != null) {
-            bleClient.sendIdentify(deviceID, deviceName)
-            Log.i("TouchBridgeVM", "Sent identify: $deviceID ($deviceName)")
+            try {
+                // Sign (deviceID || daemonEphemeralPubKey) with the long-term key.
+                // data = the daemon's ephemeral public key (X9.62 uncompressed).
+                val signedMessage = deviceID.toByteArray() + data
+                val signature = keystoreManager.sign(signedMessage, Constants.SIGNING_KEY_ALIAS)
+                bleClient.sendIdentify(deviceID, deviceName, signature)
+                Log.i("TouchBridgeVM", "Sent identify: $deviceID ($deviceName) — signature included")
+            } catch (e: Exception) {
+                Log.e("TouchBridgeVM", "Failed to sign identify: ${e.message}", e)
+                // Send without signature — daemon will reject, but connection stays alive.
+                // The user may need to re-pair.
+                bleClient.sendIdentify(deviceID, deviceName, ByteArray(0))
+            }
         }
     }
 

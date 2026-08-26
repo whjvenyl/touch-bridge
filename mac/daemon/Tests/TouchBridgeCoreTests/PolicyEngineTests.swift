@@ -154,3 +154,32 @@ private func cleanup(_ dir: URL) {
     #expect(all["screensaver"]?.mode == .proximitySession)
     #expect(all["custom_surface"]?.mode == .biometricRequired)
 }
+
+// MARK: - Kill-Switch Tests
+
+@Test func forcePasswordFallbackDefaultsOff() {
+    let engine = PolicyEngine(plistPath: "/nonexistent/path/policy.plist")
+    #expect(engine.forcePasswordFallback() == false)
+}
+
+@Test func forcePasswordFallbackFromPlist() throws {
+    let (dir, path) = makeTempPlistDir()
+    defer { cleanup(dir) }
+
+    let dict: NSDictionary = ["ForcePasswordFallback": true]
+    dict.write(toFile: path, atomically: true)
+
+    let engine = PolicyEngine(plistPath: path)
+    #expect(engine.forcePasswordFallback() == true)
+}
+
+@Test func forcePasswordFallbackPlistFalse() throws {
+    let (dir, path) = makeTempPlistDir()
+    defer { cleanup(dir) }
+
+    let dict: NSDictionary = ["ForcePasswordFallback": false]
+    dict.write(toFile: path, atomically: true)
+
+    let engine = PolicyEngine(plistPath: path)
+    #expect(engine.forcePasswordFallback() == false)
+}

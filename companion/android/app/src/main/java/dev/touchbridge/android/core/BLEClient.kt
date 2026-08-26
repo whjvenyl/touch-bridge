@@ -191,11 +191,12 @@ class BLEClient(private val context: Context) {
 
     /**
      * Send an identify message (type 6) — after ECDH on reconnect.
+     * The signature proves possession of the paired private key.
      */
-    fun sendIdentify(deviceID: String, deviceName: String): Boolean {
+    fun sendIdentify(deviceID: String, deviceName: String, signature: ByteArray): Boolean {
         val char = responseChar ?: return false
         val g = gatt ?: return false
-        val framed = WireFormat.buildIdentify(deviceID, deviceName)
+        val framed = WireFormat.buildIdentify(deviceID, deviceName, signature)
         char.value = framed
         return g.writeCharacteristic(char)
     }

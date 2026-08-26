@@ -97,6 +97,7 @@ final class CompanionSimulator: @unchecked Sendable {
     // ECDH session (derived after key exchange)
     private(set) var sessionCrypto: SessionCrypto?
     private var ecdhPrivateKey: P256.KeyAgreement.PrivateKey?
+    private var daemonEphemeralPubKey: Data?
 
     init(
         centralID: UUID = UUID(),
@@ -133,24 +134,80 @@ final class CompanionSimulator: @unchecked Sendable {
         }
         let daemonPublic = try SessionCrypto.importPublicKey(daemonPublicKeyData)
         sessionCrypto = try SessionCrypto.deriveSession(myPrivate: myPrivate, theirPublic: daemonPublic)
+        daemonEphemeralPubKey = daemonPublicKeyData
     }
 
     // MARK: - Identify
 
-    /// Create an encrypted identify message: [1, 6] + AES-GCM(protobuf Identify).
+    /// Create an encrypted identify message with a valid signature: [1, 6] + AES-GCM(protobuf Identify).
     func makeIdentifyData() throws -> Data {
-        guard let crypto = sessionCrypto else { throw CompanionError.noSession }
+        return try makeIdentifyData(signatureMode: .valid)
+    }
 
-        let msg = TBIdentify.with {
-            $0.deviceID = deviceID
-            $0.deviceName = deviceName
+    /// Create an identify message with no signature (for testing rejection).
+    func makeIdentifyDataWithoutSignature() throws -> Data {
+        return try makeIdentifyData(signatureMode: .omitted)
+    }
+
+    /// Create an identify message with a tampered signature (for testing rejection).
+    func makeIdentifyDataWithTamperedSignature() throws -> Data {
+        return try makeIdentifyData(signatureMode: .tampered)
+    }
+
+    private enum SignatureMode { case valid, omitted, tampered }
+
+    private func makeIdentifyData(signatureMode: SignatureMode) throws -> Data {
+        guard let crypto = sessionCrypto else { throw CompanionError.noSession }
+        guard let daemonPubKey = daemonEphemeralPubKey else { throw CompanionError.noSession }
+
+        let msg: TBIdentify
+        switch signatureMode {
+        case .omitted:
+            // Empty signature — simulates a client that doesn't sign
+            msg = TBIdentify.with {
+                $0.deviceID = deviceID
+                $0.deviceName = deviceName
+            }
+        case .tampered:
+            // Valid signature with one byte flipped
+            var sig = try signIdentify(daemonPubKey: daemonPubKey)
+            if !sig.isEmpty { sig[sig.count - 1] ^= 0xFF }
+            msg = TBIdentify.with {
+                $0.deviceID = deviceID
+                $0.deviceName = deviceName
+                $0.signature = sig
+            }
+        case .valid:
+            // Valid signature
+            let sig = try signIdentify(daemonPubKey: daemonPubKey)
+            msg = TBIdentify.with {
+                $0.deviceID = deviceID
+                $0.deviceName = deviceName
+                $0.signature = sig
+            }
         }
+
         let payload = try msg.serializedData()
         let encrypted = try crypto.encrypt(plaintext: payload)
 
         var wire = Data([1, 6]) // version=1, type=identify(6)
         wire.append(encrypted)
         return wire
+    }
+
+    /// Sign (deviceID || daemonEphemeralPubKey) with the long-term signing key.
+    private func signIdentify(daemonPubKey: Data) throws -> Data {
+        let message = Data(deviceID.utf8) + daemonPubKey
+        var cfErr: Unmanaged<CFError>?
+        guard let signature = SecKeyCreateSignature(
+            signingPrivateKey,
+            .ecdsaSignatureMessageX962SHA256,
+            message as CFData,
+            &cfErr
+        ) else {
+            throw CompanionError.signingFailed
+        }
+        return signature as Data
     }
 
     // MARK: - Challenge Response
@@ -1022,3 +1079,141 @@ private func lastPairResponse(_ bleServer: MockBLEServer) throws -> TBPairRespon
     let second = await secondAuth
     #expect(second.success == true)
 }
+
+// MARK: - Kill-Switch Tests
+
+@Test func killSwitchForcesPasswordFallback() async throws {
+    let bleServer = MockBLEServer()
+    let keychain = KeychainStore(service: "dev.touchbridge.test.\(UUID().uuidString)")
+    let logDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("tb-test-\(UUID().uuidString)")
+    let auditLog = AuditLog(logDirectory: logDir)
+
+    // Create a plist with the kill-switch active
+    let plistDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("tb-policy-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: plistDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: plistDir) }
+    let plistPath = plistDir.appendingPathComponent("policy.plist").path
+    let dict: NSDictionary = ["ForcePasswordFallback": true]
+    dict.write(toFile: plistPath, atomically: true)
+
+    let policyEngine = PolicyEngine(plistPath: plistPath)
+    let coordinator = DaemonCoordinator(
+        keychainStore: keychain,
+        auditLog: auditLog,
+        policyEngine: policyEngine,
+        bleServer: bleServer
+    )
+
+    let result = await coordinator.authenticateFromPAM(
+        user: "test", service: "sudo", pid: 1, timeout: 5.0
+    )
+
+    #expect(result.success == false)
+    #expect(result.reason == "forced_fallback")
+    // No challenges should have been dispatched
+    #expect(bleServer.sentChallenges.isEmpty)
+}
+
+@Test func killSwitchOffAllowsNormalAuth() async throws {
+    let bleServer = MockBLEServer()
+    let keychain = KeychainStore(service: "dev.touchbridge.test.\(UUID().uuidString)")
+    let logDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("tb-test-\(UUID().uuidString)")
+    let auditLog = AuditLog(logDirectory: logDir)
+
+    // Kill-switch NOT active
+    let plistDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("tb-policy-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: plistDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: plistDir) }
+    let plistPath = plistDir.appendingPathComponent("policy.plist").path
+    let dict: NSDictionary = ["ForcePasswordFallback": false]
+    dict.write(toFile: plistPath, atomically: true)
+
+    let policyEngine = PolicyEngine(plistPath: plistPath)
+    let coordinator = DaemonCoordinator(
+        keychainStore: keychain,
+        auditLog: auditLog,
+        policyEngine: policyEngine,
+        bleServer: bleServer
+    )
+
+    // With no devices connected, auth should fail with no_companion_connected
+    // (NOT forced_fallback — proving the kill-switch didn't short-circuit)
+    let result = await coordinator.authenticateFromPAM(
+        user: "test", service: "sudo", pid: 1, timeout: 2.0
+    )
+
+    #expect(result.success == false)
+    #expect(result.reason == "no_companion_connected")
+}
+
+// MARK: - Identify Signature Tests
+
+@Test func identifyWithValidSignatureSucceeds() async throws {
+    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let companion = CompanionSimulator()
+    try register(companion, in: keychain)
+
+    try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
+
+    let entries = try await auditLog.readEntries()
+    #expect(entries.contains { $0.result == "IDENTIFIED" })
+    #expect(!entries.contains { $0.result == "REJECTED_INVALID_SIGNATURE" })
+    #expect(!entries.contains { $0.result == "REJECTED_MISSING_SIGNATURE" })
+}
+
+@Test func identifyWithMissingSignatureIsRejected() async throws {
+    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let companion = CompanionSimulator()
+    try register(companion, in: keychain)
+
+    // ECDH only
+    bleServer.simulateConnect(companion.centralID)
+    let clientKey = companion.ecdhPublicKeyData()
+    let serverKey = bleServer.simulateSessionKey(clientKey, from: companion.centralID)!
+    try companion.completeECDH(daemonPublicKeyData: serverKey)
+
+    // Send identify without signature
+    let identifyData = try companion.makeIdentifyDataWithoutSignature()
+    bleServer.simulatePairingData(identifyData, from: companion.centralID)
+    try await Task.sleep(nanoseconds: 80_000_000)
+
+    let entries = try await auditLog.readEntries()
+    #expect(entries.contains { $0.result == "REJECTED_MISSING_SIGNATURE" })
+    #expect(!entries.contains { $0.result == "IDENTIFIED" })
+
+    // Auth should fail — device was not identified
+    let result = await coordinator.authenticateFromPAM(user: "u", service: "sudo", pid: 1, timeout: 0.5)
+    #expect(result.success == false)
+    #expect(result.reason == "no_companion_connected")
+}
+
+@Test func identifyWithTamperedSignatureIsRejected() async throws {
+    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let companion = CompanionSimulator()
+    try register(companion, in: keychain)
+
+    // ECDH only
+    bleServer.simulateConnect(companion.centralID)
+    let clientKey = companion.ecdhPublicKeyData()
+    let serverKey = bleServer.simulateSessionKey(clientKey, from: companion.centralID)!
+    try companion.completeECDH(daemonPublicKeyData: serverKey)
+
+    // Send identify with tampered signature
+    let identifyData = try companion.makeIdentifyDataWithTamperedSignature()
+    bleServer.simulatePairingData(identifyData, from: companion.centralID)
+    try await Task.sleep(nanoseconds: 80_000_000)
+
+    let entries = try await auditLog.readEntries()
+    #expect(entries.contains { $0.result == "REJECTED_INVALID_SIGNATURE" })
+    #expect(!entries.contains { $0.result == "IDENTIFIED" })
+
+    // Auth should fail — device was not identified
+    let result = await coordinator.authenticateFromPAM(user: "u", service: "sudo", pid: 1, timeout: 0.5)
+    #expect(result.success == false)
+    #expect(result.reason == "no_companion_connected")
+}
+

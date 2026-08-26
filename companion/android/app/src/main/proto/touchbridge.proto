@@ -73,9 +73,14 @@ message ChallengeResponse {
 // ---------------------------------------------------------------------------
 
 // Sent by companion → Mac after ECDH to identify a previously-paired device.
+// The signature proves possession of the paired private key — without it,
+// any device that completes ECDH could claim a known deviceID.
 message Identify {
   string device_id = 1;
   string device_name = 2;
+  bytes  signature = 3;         // ECDSA P-256 signature of (device_id || ephemeral_pub_key)
+                                // Signed with the device's long-term paired key.
+                                // Required — daemon rejects Identify without a valid signature.
 }
 
 // ---------------------------------------------------------------------------

@@ -21,6 +21,7 @@ public final class CompanionCoordinator: NSObject, @unchecked Sendable {
     // Session state
     private var ephemeralPrivateKey: P256.KeyAgreement.PrivateKey?
     private var sessionCrypto: SessionCryptoWrapper?
+    private var daemonEphemeralPubKey: Data?
     private var deviceID: String
 
     // Callbacks
@@ -195,6 +196,7 @@ public final class CompanionCoordinator: NSObject, @unchecked Sendable {
 
             sessionCrypto = crypto
             challengeHandler.sessionCrypto = crypto
+            daemonEphemeralPubKey = macPublicKeyData
 
             logger.info("ECDH session established with Mac")
 
@@ -214,9 +216,23 @@ public final class CompanionCoordinator: NSObject, @unchecked Sendable {
     /// this session as identified so it can receive challenges.
     private func sendIdentify(using crypto: SessionCryptoWrapper) {
         do {
+            guard let daemonPubKey = daemonEphemeralPubKey else {
+                logger.error("Cannot send identify: missing daemon ephemeral public key")
+                return
+            }
+
+            // Sign (deviceID || daemonEphemeralPubKey) with the long-term
+            // Secure Enclave key to prove possession of the paired private key.
+            // This binds the identify to this specific ECDH session, preventing
+            // replay. The daemon verifies the signature against the pinned
+            // public key stored in its keychain.
+            let signedMessage = Data(deviceID.utf8) + daemonPubKey
+            let signature = try signingProvider.sign(data: signedMessage, keyTag: signingKeyTag)
+
             let msg = TBIdentify.with {
                 $0.deviceID = deviceID
                 $0.deviceName = UIDevice.current.name
+                $0.signature = signature
             }
             let plaintext = try msg.serializedData()
             let encrypted = try crypto.encrypt(plaintext: plaintext)
@@ -225,7 +241,7 @@ public final class CompanionCoordinator: NSObject, @unchecked Sendable {
             wireData.append(encrypted)
 
             _ = bleClient.sendPairingData(wireData)
-            logger.info("Sent identify for device \(self.deviceID)")
+            logger.info("Sent identify for device \(self.deviceID) — signature included")
         } catch {
             logger.error("Failed to send identify: \(error.localizedDescription)")
         }

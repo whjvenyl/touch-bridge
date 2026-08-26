@@ -18,6 +18,7 @@ public final class DaemonCoordinator: NSObject, PAMAuthHandler, @unchecked Senda
     public let pairingManager: PairingManager
     public let keychainStore: KeychainStore
     public let auditLog: AuditLog
+    public let policyEngine: PolicyEngine
 
     /// Guards `sessions` and `pendingAuthentications` — both are mutated from
     /// CoreBluetooth delegate callbacks, detached Tasks, and PAM auth calls,
@@ -55,6 +56,7 @@ public final class DaemonCoordinator: NSObject, PAMAuthHandler, @unchecked Senda
     public init(
         keychainStore: KeychainStore = KeychainStore(),
         auditLog: AuditLog = AuditLog(),
+        policyEngine: PolicyEngine = PolicyEngine(),
         challengeManager: ChallengeManager = ChallengeManager(),
         pairingManager: PairingManager? = nil,
         rssiThreshold: Int = TouchBridgeConstants.defaultRSSIThreshold,
@@ -63,6 +65,7 @@ public final class DaemonCoordinator: NSObject, PAMAuthHandler, @unchecked Senda
     ) {
         self.keychainStore = keychainStore
         self.auditLog = auditLog
+        self.policyEngine = policyEngine
         self.challengeManager = challengeManager
         self.bleServer = bleServer ?? BLEServer(rssiThreshold: rssiThreshold, serviceUUID: serviceUUID)
 
@@ -168,6 +171,22 @@ public final class DaemonCoordinator: NSObject, PAMAuthHandler, @unchecked Senda
         pid: Int,
         timeout: TimeInterval
     ) async -> (success: Bool, reason: String?) {
+        // Kill-switch: if ForcePasswordFallback is active (env var or plist),
+        // short-circuit immediately so PAM falls through to password.
+        // This is the sudo-lockout rollback path — never dispatch challenges
+        // when the kill-switch is engaged.
+        if policyEngine.forcePasswordFallback() {
+            logger.warning("PAM auth: kill-switch active (TOUCHBRIDGE_FORCE_PASSWORD) — forcing password fallback")
+            await auditLog.log(AuditEntry(
+                sessionID: UUID().uuidString,
+                surface: "pam_\(service)",
+                requestingProcess: service,
+                deviceID: "",
+                result: "FORCE_PASSWORD_FALLBACK"
+            ))
+            return (false, "forced_fallback")
+        }
+
         // Only challenge sessions that have completed ECDH AND identified as a known paired device.
         // Unknown/anonymous centrals (e.g. stranger's phone that happens to be nearby) are excluded.
         let targets = stateLock.withLock {
@@ -537,7 +556,11 @@ extension DaemonCoordinator: BLEServerDelegate {
     /// without going through a full pairing ceremony. The daemon looks up the deviceID in
     /// the keychain and, if found, marks the session as identified so it can receive challenges.
     private func handleIdentify(data: Data, from centralID: UUID) async throws {
-        guard let crypto = stateLock.withLock({ sessions[centralID]?.sessionCrypto }) else {
+        // We need both the session crypto (for decryption) and the ephemeral private key
+        // (to reconstruct our ephemeral public key for signature verification).
+        guard let (crypto, ephemeralPrivateKey) = stateLock.withLock({
+            sessions[centralID].map { ($0.sessionCrypto, $0.ephemeralPrivateKey) }
+        }), let crypto, let ephemeralPrivateKey else {
             logger.warning("Identify from \(centralID): no session crypto — ignoring")
             return
         }
@@ -546,19 +569,60 @@ extension DaemonCoordinator: BLEServerDelegate {
         let encryptedPayload = data.dropFirst(2)
         let plaintext = try crypto.decrypt(ciphertext: Data(encryptedPayload))
 
-        // The payload is a JSON object with deviceID and deviceName.
-        // We use a local struct to avoid importing TouchBridgeProtocol's IdentifyMessage
-        // (which is fine here since we're in the daemon — same package as DaemonCoordinator).
         let msg = try WireFormat.decodePayload(TBIdentify.self, from: plaintext)
 
         // Verify this device is actually in the keychain (was paired at some point).
-        guard (try? keychainStore.retrievePairedDevice(deviceID: msg.deviceID)) != nil else {
+        guard let pairedDevice = try? keychainStore.retrievePairedDevice(deviceID: msg.deviceID) else {
             logger.warning("Identify from \(centralID): unknown deviceID \(msg.deviceID) — ignoring")
             return
         }
 
+        // Verify the signature proves possession of the paired private key.
+        // The companion signs (deviceID || daemonEphemeralPubKey) with its long-term key.
+        // This binds the identify to this specific ECDH session, preventing replay.
+        guard !msg.signature.isEmpty else {
+            logger.warning("Identify from \(centralID): missing signature — rejecting")
+            await auditLog.log(AuditEntry(
+                sessionID: centralID.uuidString,
+                surface: "identify",
+                companionDevice: msg.deviceName,
+                deviceID: msg.deviceID,
+                result: "REJECTED_MISSING_SIGNATURE"
+            ))
+            return
+        }
+
+        let daemonEphemeralPubKey = SessionCrypto.exportPublicKey(ephemeralPrivateKey.publicKey)
+        let signedMessage = Data(msg.deviceID.utf8) + daemonEphemeralPubKey
+
+        guard let pinnedSecKey = try? keychainStore.retrievePublicKey(for: msg.deviceID) else {
+            logger.warning("Identify from \(centralID): cannot reconstruct pinned key for \(msg.deviceID) — rejecting")
+            return
+        }
+
+        var sigError: Unmanaged<CFError>?
+        let signatureValid = SecKeyVerifySignature(
+            pinnedSecKey,
+            .ecdsaSignatureMessageX962SHA256,
+            signedMessage as CFData,
+            msg.signature as CFData,
+            &sigError
+        )
+
+        guard signatureValid else {
+            logger.warning("Identify from \(centralID): invalid signature for \(msg.deviceID) — rejecting")
+            await auditLog.log(AuditEntry(
+                sessionID: centralID.uuidString,
+                surface: "identify",
+                companionDevice: msg.deviceName,
+                deviceID: msg.deviceID,
+                result: "REJECTED_INVALID_SIGNATURE"
+            ))
+            return
+        }
+
         stateLock.withLock { sessions[centralID]?.deviceID = msg.deviceID }
-        logger.info("Identified \(msg.deviceName) (\(msg.deviceID)) on central \(centralID)")
+        logger.info("Identified \(msg.deviceName) (\(msg.deviceID)) on central \(centralID) — signature verified")
 
         await auditLog.log(AuditEntry(
             sessionID: centralID.uuidString,
