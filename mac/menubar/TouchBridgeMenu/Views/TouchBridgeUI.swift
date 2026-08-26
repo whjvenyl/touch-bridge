@@ -426,6 +426,22 @@ enum SettingsLayout {
     static let groupCornerRadius: CGFloat = 10
 }
 
+// MARK: - Window helpers
+
+/// Focus an existing window by title, or open a new one via the provided closure.
+///
+/// Prevents duplicate windows for single-instance windows like pairing.
+func focusOrOpenWindow(titled title: String, open: () -> Void) {
+    for window in NSApplication.shared.windows {
+        if window.title == title {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+    }
+    open()
+}
+
 // MARK: - Remove sidebar toggle
 
 /// Removes the sidebar toggle button from a NavigationSplitView's toolbar.

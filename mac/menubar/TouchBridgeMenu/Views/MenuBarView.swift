@@ -217,7 +217,7 @@ struct MenuBarView: View {
 
             Button {
                 state.startPairing()
-                openWindow(id: "pairing")
+                focusOrOpenWindow(titled: "TouchBridge Pairing") { openWindow(id: "pairing") }
             } label: {
                 Label("Pair New Device", systemImage: "plus.circle")
                     .font(.subheadline)
@@ -264,7 +264,7 @@ struct MenuBarView: View {
             if state.status == nil && state.isDaemonRunning {
                 Button {
                     state.startPairing()
-                    openWindow(id: "pairing")
+                    focusOrOpenWindow(titled: "TouchBridge Pairing") { openWindow(id: "pairing") }
                 } label: {
                     Label("Pair New Device", systemImage: "plus.circle")
                 }

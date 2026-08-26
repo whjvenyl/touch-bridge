@@ -295,7 +295,7 @@ struct DevicesSettingsView: View {
 
                         Button("Pair New Device") {
                             state.startPairing()
-                            openWindow(id: "pairing")
+                            focusOrOpenWindow(titled: "TouchBridge Pairing") { openWindow(id: "pairing") }
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -340,7 +340,7 @@ struct DevicesSettingsView: View {
                     HStack {
                         Button("Pair New Device") {
                             state.startPairing()
-                            openWindow(id: "pairing")
+                            focusOrOpenWindow(titled: "TouchBridge Pairing") { openWindow(id: "pairing") }
                         }
                         .buttonStyle(.borderedProminent)
                         Spacer()

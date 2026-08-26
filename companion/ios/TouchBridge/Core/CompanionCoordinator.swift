@@ -400,7 +400,7 @@ extension CompanionCoordinator: BLEClientDelegate {
     public func bleClient(_ client: BLEClient, didReceivePairingData data: Data, from peripheralID: UUID) {
         logger.info("Received pairing response from Mac")
 
-        // Response is wire format: [version=1][type=2(pairResponse)] + JSON payload
+        // Response is wire format: [version=1][type=2(pairResponse)] + protobuf payload
         let payload: Data
         if data.count > 2, data[data.startIndex] == 1 {
             payload = data.dropFirst(2)
@@ -408,8 +408,9 @@ extension CompanionCoordinator: BLEClientDelegate {
             payload = data
         }
 
-        if let json = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
-           let accepted = json["accepted"] as? Bool, accepted {
+        // Parse as TBPairResponse protobuf (the daemon sends protobuf, not JSON).
+        if let response = try? TBPairResponse(serializedData: payload),
+           response.accepted {
             // Persist pairing only once the Mac has accepted.
             // "pairedMacID" holds the Mac's BLE service UUID (set during beginPairing) —
             // it locks future scans to this Mac instead of any TouchBridge Mac nearby.
