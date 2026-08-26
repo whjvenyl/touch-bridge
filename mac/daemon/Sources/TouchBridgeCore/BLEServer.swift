@@ -152,6 +152,13 @@ public class BLEServer: NSObject, BLEServerInterface {
     // MARK: - Public API
 
     /// Try to send a notification, queuing it for retry if the BLE transmit queue is full.
+    ///
+    /// Returns `true` when the data is either sent immediately or queued for retry —
+    /// in both cases the data will be delivered to the central. Returning `false` for
+    /// queued notifications caused a bug where `issueChallenge` returned `nil` even
+    /// though the challenge was still pending and would be delivered after the queue
+    /// flush, causing the auth continuation to never be registered and the auth to
+    /// time out with "denied".
     private func sendOrQueue(_ data: Data, for char: CBMutableCharacteristic, to central: CBCentral) -> Bool {
         let sent = peripheralManager.updateValue(data, for: char, onSubscribedCentrals: [central])
         if !sent {
@@ -162,7 +169,10 @@ public class BLEServer: NSObject, BLEServerInterface {
             }
             logger.warning("Notification queued for retry (transmit queue full)")
         }
-        return sent
+        // Return true for both sent and queued — the data will be delivered
+        // either way. Callers need to know the challenge is pending, not that
+        // it was transmitted instantly.
+        return true
     }
 
     /// Start advertising the TouchBridge BLE service.
