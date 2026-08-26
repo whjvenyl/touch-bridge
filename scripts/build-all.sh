@@ -42,18 +42,16 @@ else
   echo ""
 fi
 
-# 1. Protocol package (SPM — cached after first build)
-echo "▸ Building protocol package…"
-cd "$PROJECT_DIR/protocol/swift"
-swift build 2>&1 | tail -3
+# 1. Protocol tests (fast — run via SPM, no Xcode needed)
 if [[ "$RUN_TESTS" == true ]]; then
   echo "▸ Testing protocol package…"
+  cd "$PROJECT_DIR/protocol/swift"
   swift test 2>&1 | tail -3
+  echo "  ✓ Protocol tests"
+  echo ""
 fi
-echo "  ✓ Protocol"
-echo ""
 
-# 2. Daemon + Menubar (single Xcode project)
+# 2. Daemon + Menubar (single Xcode project — builds protocol SPM package as dependency)
 echo "▸ Building macOS project (daemon + menubar)…"
 cd "$PROJECT_DIR/mac"
 xcodegen generate 2>&1 | tail -1
@@ -80,7 +78,6 @@ echo ""
 echo "━━━ Build Complete ━━━"
 echo ""
 echo "Built components:"
-echo "  • Protocol:  protocol/swift/.build/"
 echo "  • Daemon:    mac/ (DerivedData)"
 echo "  • PAM:       mac/pam/pam_touchbridge.so"
 echo "  • Menubar:   mac/ (DerivedData)"
