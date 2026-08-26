@@ -1,6 +1,9 @@
 ---
-title: TouchBridge Policy Configuration
-description: TouchBridge Policy Configuration
+title: Policy Configuration
+description: Per-surface auth policy and configuration options
+sidebar:
+  icon: sliders-horizontal
+  order: 5
 ---
 
 # TouchBridge Policy Configuration

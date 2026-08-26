@@ -1,0 +1,37 @@
+---
+title: v1.0.0
+type: changelog
+date: 2026-03-29
+changelog:
+  version: 1.0.0
+  category: Release
+---
+
+First stable release.
+
+### Menu Bar App & Installer
+
+- macOS menu bar app with connection status, auth history, and settings
+- 4-step guided setup wizard (welcome → install → pair → done)
+- One-click `.pkg` installer — download, double-click, done
+- `.dmg` disk image with app + installer bundled
+
+### Companions
+
+- **iOS** — Full companion app with BLE, Secure Enclave, Face ID/Touch ID, QR pairing
+- **Android** — Full companion app (Kotlin + Jetpack Compose) with Android Keystore
+- **Apple Watch** — watchOS app for approving auth from your wrist
+- **Wear OS** — Wear OS app for Android Watch users
+
+### Features
+
+- Simulator mode (`touchbridge serve --simulator`) — test without a phone
+- Proximity auto-lock (`--auto-lock`) — lock Mac when companion disconnects
+- PAM user messages — terminal feedback during authentication
+- Auth history & analytics — `touchbridge logs --summary`, `--failures`, `--export csv`
+- Per-surface policy engine (biometric required vs proximity session)
+
+### Testing
+
+- 75 unit tests (daemon) + 16 protocol tests + 38 E2E validation tests
+- **129 total tests**

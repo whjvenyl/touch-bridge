@@ -1,0 +1,18 @@
+---
+title: v1.1.1
+type: changelog
+date: 2026-07-16
+changelog:
+  version: 1.1.1
+  category: Fixes
+---
+
+### Fixed
+
+- **sudo lockout on uninstall/upgrade**: the Homebrew cask deleted the PAM module while leaving the `/etc/pam.d/sudo` reference, which made `sudo` unable to initialize PAM. Uninstall now restores the pam.d backup (or strips our line) before removing the module.
+- **BLE re-identify recovery on real devices**: restored CoreBluetooth connections are reconnected cleanly instead of reused with stale state; ECDH now starts only after service/characteristic readiness; the daemon recovers a session when a session key arrives before the connect event.
+- `ProximityMonitor` takes an injectable lock action so tests no longer sleep the developer's display.
+
+### Security
+
+- SECURITY.md documents the missing-module PAM availability failure mode and a recovery that works without sudo.

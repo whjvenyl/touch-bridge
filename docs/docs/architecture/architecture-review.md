@@ -1,6 +1,9 @@
 ---
 title: Architecture Review
 description: Comprehensive audit of what's built, broken, and needs work
+sidebar:
+  icon: clipboard-list
+  order: 3
 ---
 
 # TouchBridge — Architecture Review
@@ -18,13 +21,13 @@ TouchBridge is a PAM-replacement system that delegates macOS authentication to a
 
 | Area | Status |
 |------|--------|
-| Protocol & crypto design | Solid (protobuf + ECDH + AES-GCM + ECDSA) |
-| macOS daemon | Functional, 112 tests pass |
-| PAM module | Functional, needs JSON escaping |
-| iOS companion | Production-ready |
-| Android companion | **Broken — 5 critical protocol mismatches** |
-| Menubar control app | Functional, bundles daemon + PAM |
-| Documentation | Updated |
+| Protocol & crypto design | <Badge variant="success">Solid</Badge> protobuf + ECDH + AES-GCM + ECDSA |
+| macOS daemon | <Badge variant="success">Functional</Badge> 112 tests pass |
+| PAM module | <Badge variant="warning">Needs work</Badge> JSON escaping |
+| iOS companion | <Badge variant="success">Production-ready</Badge> |
+| Android companion | <Badge variant="danger">Broken</Badge> 5 critical protocol mismatches |
+| Menubar control app | <Badge variant="success">Functional</Badge> bundles daemon + PAM |
+| Documentation | <Badge variant="success">Updated</Badge> |
 
 ---
 

@@ -1,0 +1,43 @@
+---
+title: v1.2.0
+type: changelog
+date: 2026-08-26
+changelog:
+  version: 1.2.0
+  category: Architecture
+---
+
+Major build system and protocol redesign.
+
+### Protocol
+
+- Migrated wire format from hand-written JSON to **protobuf** binary messages
+- Canonical schema in `protocol/proto/touchbridge.proto`
+- Swift code generated via `protocol/generate.sh` (Homebrew `protobuf` + `swift-protobuf`)
+- Android code generated at build time via Gradle protobuf plugin
+- Generated Swift file is gitignored — run `generate.sh` after cloning
+- Message size limit increased from 256 to 512 bytes
+
+### Build System
+
+- Consolidated macOS daemon from SPM to a **unified Xcode project** (`mac/project.yml`)
+- XcodeGen `include:` splits target definitions into `daemon/targets.yml` and `menubar/targets.yml`
+- Protocol remains a **local Swift Package** at `protocol/swift`
+- Menu bar app bundles daemon binary + PAM module in its Resources
+- No Xcode workspace needed — single generated project
+
+### Removed
+
+- Browser extensions (Safari, Chrome) — removed
+- Web companion mode (`--web`) — removed
+- Authorization plugin stub — removed
+- `touchbridged` and `touchbridge-test` — unified into single `touchbridge` CLI
+
+### CI
+
+- CI workflow updated for Xcode builds with protobuf generation
+- Separate jobs for protocol tests, daemon tests, menubar build, and iOS build
+
+### Tests
+
+- 128 tests total (112 daemon + 16 protocol) — all passing

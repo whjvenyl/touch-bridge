@@ -1,6 +1,9 @@
 ---
-title: TouchBridge Security Model
-description: TouchBridge Security Model
+title: Security Model
+description: Cryptographic design, threat model, and security properties
+sidebar:
+  icon: shield
+  order: 4
 ---
 
 # TouchBridge Security Model

@@ -1,11 +1,18 @@
 ---
-title: TouchBridge Limitations
-description: TouchBridge Limitations
+title: Limitations
+description: What TouchBridge can't do and why
+sidebar:
+  icon: alert-triangle
+  order: 6
 ---
 
 # TouchBridge Limitations
 
 ## Cannot Do
+
+:::warning
+These are hardware or platform limitations — no software can work around them.
+:::
 
 ### Keychain items with `kSecAccessControlBiometryCurrentSet`
 macOS Keychain items sealed with biometric ACLs require the local Secure Enclave to unwrap them. This is a hardware-level restriction — no software can bypass it. TouchBridge cannot unlock these items.

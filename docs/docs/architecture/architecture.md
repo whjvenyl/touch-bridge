@@ -1,68 +1,46 @@
 ---
-title: TouchBridge Architecture
-description: TouchBridge Architecture
+title: Architecture
+description: TouchBridge component overview and data flow
+sidebar:
+  icon: layout
+  order: 2
 ---
 
-# TouchBridge Architecture
+# Architecture
 
 ## Component Overview
 
-```
-┌─────────────────────────────────────────────────────┐
-│                    macOS                             │
-│                                                      │
-│  ┌──────────┐    Unix Socket    ┌───────────────┐   │
-│  │ PAM      │ ───────────────→  │ touchbridge   │   │
-│  │ Module   │                   │ (daemon)      │   │
-│  └──────────┘                   │               │   │
-│                                 │ ┌───────────┐ │   │
-│  ┌──────────┐    Unix Socket    │ │ Socket    │ │   │
-│  │ Auth     │ ───────────────→  │ │ Server    │ │   │
-│  │ Plugin   │                   │ └───────────┘ │   │
-│                                 │ ┌───────────┐ │   │
-│                                 │ │ Challenge │ │   │
-│                                 │ │ Manager   │ │   │
-│                                 │ └───────────┘ │   │
-│                                 │ ┌───────────┐ │   │
-│                                 │ │ BLE       │ │   │
-│                                 │ │ Server    │ │   │
-│                                 │ └─────┬─────┘ │   │
-│                                 └───────┼───────┘   │
-│                                         │ BLE       │
-└─────────────────────────────────────────┼───────────┘
-                                          │
-┌─────────────────────────────────────────┼───────────┐
-│                  iPhone/iPad            │           │
-│                                         │           │
-│                                 ┌───────┴─────┐    │
-│                                 │ BLE Client  │    │
-│                                 └───────┬─────┘    │
-│                                 ┌───────┴─────┐    │
-│                                 │ Challenge   │    │
-│                                 │ Handler     │    │
-│                                 └───────┬─────┘    │
-│                          ┌──────────────┼────────┐ │
-│                          │              │        │ │
-│                    ┌─────┴─────┐  ┌─────┴──────┐ │ │
-│                    │ LAContext │  │ Secure     │ │ │
-│                    │ (Face ID) │  │ Enclave    │ │ │
-│                    └───────────┘  └────────────┘ │ │
-│                                                    │
-└────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+  subgraph macOS
+    PAM[PAM Module] -->|Unix Socket| Daemon[touchbridge daemon]
+    Daemon --> SocketServer
+    Daemon --> ChallengeManager
+    Daemon --> BLEServer
+  end
+  BLEServer -->|BLE| BLEClient
+
+  subgraph iPhone
+    BLEClient --> ChallengeHandler
+    ChallengeHandler --> LAContext[Face ID / Touch ID]
+    ChallengeHandler --> SE[Secure Enclave]
+  end
 ```
 
 ## Data Flow: sudo authentication
 
-1. User runs `sudo echo test`
-2. PAM loads `pam_touchbridge.so`
-3. PAM module connects to daemon socket (`~/Library/Application Support/TouchBridge/daemon.sock`)
-4. SocketServer receives request, calls `DaemonCoordinator.authenticateFromPAM()`
-5. DaemonCoordinator finds connected companion via BLE
-6. ChallengeManager generates 32-byte nonce with 10s expiry
-7. Nonce encrypted with AES-256-GCM (ECDH session key) and sent via BLE
-8. CompanionCoordinator receives, decrypts, shows Face ID prompt
-9. On success, SecureEnclaveManager signs nonce (ECDSA P-256)
-10. Signature sent back via BLE
-11. ChallengeManager verifies signature against pinned public key
-12. Result returned through continuation → SocketServer → PAM module
-13. PAM returns `PAM_SUCCESS` or `PAM_AUTH_ERR`
+<Steps>
+  <Step title="sudo triggers PAM">User runs `sudo echo test`. PAM loads `pam_touchbridge.so`.</Step>
+  <Step title="PAM connects to daemon">PAM module connects to daemon socket at `~/Library/Application Support/TouchBridge/daemon.sock`.</Step>
+  <Step title="Daemon issues challenge">SocketServer receives request → `DaemonCoordinator.authenticateFromPAM()` → ChallengeManager generates 32-byte nonce with 10s expiry.</Step>
+  <Step title="Challenge sent over BLE">Nonce encrypted with AES-256-GCM (ECDH session key) and sent via BLE to the companion device.</Step>
+  <Step title="Companion prompts biometric">CompanionCoordinator receives, decrypts, shows Face ID prompt via LAContext.</Step>
+  <Step title="Secure Enclave signs">On success, SecureEnclaveManager signs nonce with ECDSA P-256. Private key never leaves the Secure Enclave.</Step>
+  <Step title="Signature returned">Signature sent back via BLE to the daemon.</Step>
+  <Step title="Daemon verifies">ChallengeManager verifies signature against the pinned public key stored in macOS Keychain.</Step>
+  <Step title="PAM returns result">Result returned through continuation → SocketServer → PAM module. PAM returns `PAM_SUCCESS` or `PAM_AUTH_ERR`.</Step>
+</Steps>
+
+:::note
+If the companion device is unreachable, denies the request, or times out, TouchBridge falls through to the normal password prompt. You are never locked out.
+:::

@@ -1,6 +1,12 @@
 ---
-title: TouchBridge — Installation Guide
-description: TouchBridge — Installation Guide
+title: Setup Guide
+description: Full installation, pairing, and configuration guide
+sidebar:
+  icon: settings
+  order: 1
+seo:
+  title: TouchBridge Setup Guide
+  description: Complete guide to installing TouchBridge, pairing your iPhone or Android, and configuring auth policies.
 ---
 
 # TouchBridge — Installation Guide
