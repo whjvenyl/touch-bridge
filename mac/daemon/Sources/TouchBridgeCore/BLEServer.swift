@@ -104,7 +104,10 @@ public class BLEServer: NSObject, BLEServerInterface {
     private var responseChar: CBMutableCharacteristic?
     private var pairingChar: CBMutableCharacteristic?
 
-    // Connected centrals
+    // Connected centrals — accessed from CoreBluetooth delegate callbacks and public API.
+    // CoreBluetooth dispatches on its own queue (queue: nil = main queue), but sendChallenge
+    // and other public methods can be called from any thread, so this needs a lock.
+    private let centralsLock = NSLock()
     private var connectedCentrals: [UUID: ConnectedCentral] = [:]
 
     // RSSI proximity gate
@@ -164,7 +167,8 @@ public class BLEServer: NSObject, BLEServerInterface {
 
     /// Send an encrypted challenge to a specific connected central.
     public func sendChallenge(_ data: Data, to centralID: UUID) -> Bool {
-        guard let info = connectedCentrals[centralID],
+        let info = centralsLock.withLock { connectedCentrals[centralID] }
+        guard let info,
               info.subscribedToChallenge,
               let char = challengeChar else {
             logger.warning("Cannot send challenge: central \(centralID) not subscribed")
@@ -185,7 +189,8 @@ public class BLEServer: NSObject, BLEServerInterface {
 
     /// Send pairing data to a specific connected central.
     public func sendPairingData(_ data: Data, to centralID: UUID) -> Bool {
-        guard let info = connectedCentrals[centralID],
+        let info = centralsLock.withLock { connectedCentrals[centralID] }
+        guard let info,
               info.subscribedToPairing,
               let char = pairingChar else {
             logger.warning("Cannot send pairing data: central \(centralID) not subscribed")
@@ -201,7 +206,8 @@ public class BLEServer: NSObject, BLEServerInterface {
 
     /// Send session key data to a specific connected central.
     public func sendSessionKey(_ data: Data, to centralID: UUID) -> Bool {
-        guard let info = connectedCentrals[centralID],
+        let info = centralsLock.withLock { connectedCentrals[centralID] }
+        guard let info,
               info.subscribedToSession,
               let char = sessionKeyChar else {
             logger.warning("Cannot send session key: central \(centralID) not subscribed")
@@ -217,12 +223,12 @@ public class BLEServer: NSObject, BLEServerInterface {
 
     /// Get the list of connected central UUIDs.
     public var connectedCentralIDs: [UUID] {
-        Array(connectedCentrals.keys)
+        centralsLock.withLock { Array(connectedCentrals.keys) }
     }
 
     /// Get the average RSSI for a connected central.
     public func averageRSSI(for centralID: UUID) -> Int? {
-        connectedCentrals[centralID]?.averageRSSI
+        centralsLock.withLock { connectedCentrals[centralID]?.averageRSSI }
     }
 
     // MARK: - Private
@@ -351,18 +357,26 @@ extension BLEServer: CBPeripheralManagerDelegate {
         let centralID = central.identifier
         logger.info("Central \(centralID) subscribed to \(characteristic.uuid)")
 
-        if connectedCentrals[centralID] == nil {
-            connectedCentrals[centralID] = ConnectedCentral(central: central)
+        let isNewCentral: Bool = centralsLock.withLock {
+            if connectedCentrals[centralID] == nil {
+                connectedCentrals[centralID] = ConnectedCentral(central: central)
+                return true
+            }
+            return false
+        }
+        if isNewCentral {
             delegate?.bleServer(self, centralDidConnect: centralID)
         }
 
         let charUUID = characteristic.uuid
-        if charUUID == CBUUID(string: TouchBridgeConstants.challengeCharUUID) {
-            connectedCentrals[centralID]?.subscribedToChallenge = true
-        } else if charUUID == CBUUID(string: TouchBridgeConstants.sessionKeyCharUUID) {
-            connectedCentrals[centralID]?.subscribedToSession = true
-        } else if charUUID == CBUUID(string: TouchBridgeConstants.pairingCharUUID) {
-            connectedCentrals[centralID]?.subscribedToPairing = true
+        centralsLock.withLock {
+            if charUUID == CBUUID(string: TouchBridgeConstants.challengeCharUUID) {
+                connectedCentrals[centralID]?.subscribedToChallenge = true
+            } else if charUUID == CBUUID(string: TouchBridgeConstants.sessionKeyCharUUID) {
+                connectedCentrals[centralID]?.subscribedToSession = true
+            } else if charUUID == CBUUID(string: TouchBridgeConstants.pairingCharUUID) {
+                connectedCentrals[centralID]?.subscribedToPairing = true
+            }
         }
     }
 
@@ -375,18 +389,26 @@ extension BLEServer: CBPeripheralManagerDelegate {
         logger.info("Central \(centralID) unsubscribed from \(characteristic.uuid)")
 
         let charUUID = characteristic.uuid
-        if charUUID == CBUUID(string: TouchBridgeConstants.challengeCharUUID) {
-            connectedCentrals[centralID]?.subscribedToChallenge = false
-        } else if charUUID == CBUUID(string: TouchBridgeConstants.sessionKeyCharUUID) {
-            connectedCentrals[centralID]?.subscribedToSession = false
-        } else if charUUID == CBUUID(string: TouchBridgeConstants.pairingCharUUID) {
-            connectedCentrals[centralID]?.subscribedToPairing = false
+        centralsLock.withLock {
+            if charUUID == CBUUID(string: TouchBridgeConstants.challengeCharUUID) {
+                connectedCentrals[centralID]?.subscribedToChallenge = false
+            } else if charUUID == CBUUID(string: TouchBridgeConstants.sessionKeyCharUUID) {
+                connectedCentrals[centralID]?.subscribedToSession = false
+            } else if charUUID == CBUUID(string: TouchBridgeConstants.pairingCharUUID) {
+                connectedCentrals[centralID]?.subscribedToPairing = false
+            }
         }
 
         // If no subscriptions remain, treat as disconnected
-        if let info = connectedCentrals[centralID],
-           !info.subscribedToChallenge && !info.subscribedToSession && !info.subscribedToPairing {
-            connectedCentrals.removeValue(forKey: centralID)
+        let shouldDisconnect: Bool = centralsLock.withLock {
+            guard let info = connectedCentrals[centralID] else { return false }
+            if !info.subscribedToChallenge && !info.subscribedToSession && !info.subscribedToPairing {
+                connectedCentrals.removeValue(forKey: centralID)
+                return true
+            }
+            return false
+        }
+        if shouldDisconnect {
             delegate?.bleServer(self, centralDidDisconnect: centralID)
         }
     }
@@ -411,8 +433,14 @@ extension BLEServer: CBPeripheralManagerDelegate {
             let centralID = request.central.identifier
 
             // Track the central if not yet tracked
-            if connectedCentrals[centralID] == nil {
-                connectedCentrals[centralID] = ConnectedCentral(central: request.central)
+            let isNewCentral: Bool = centralsLock.withLock {
+                if connectedCentrals[centralID] == nil {
+                    connectedCentrals[centralID] = ConnectedCentral(central: request.central)
+                    return true
+                }
+                return false
+            }
+            if isNewCentral {
                 delegate?.bleServer(self, centralDidConnect: centralID)
             }
 

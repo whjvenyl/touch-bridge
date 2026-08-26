@@ -22,7 +22,11 @@ public final class DaemonCoordinator: NSObject, PAMAuthHandler, @unchecked Senda
     /// Guards `sessions` and `pendingAuthentications` — both are mutated from
     /// CoreBluetooth delegate callbacks, detached Tasks, and PAM auth calls,
     /// which run on different threads.
-    private let stateLock = NSLock()
+    ///
+    /// Uses `NSRecursiveLock` for defense-in-depth: if a future callback path
+    /// ever re-enters the lock (e.g. a delegate callback that triggers another
+    /// event synchronously), a plain `NSLock` would deadlock silently.
+    private let stateLock = NSRecursiveLock()
 
     // Per-central session state (access only while holding stateLock)
     private var sessions: [UUID: SessionState] = [:]
@@ -571,7 +575,7 @@ extension DaemonCoordinator: BLEServerDelegate {
 /// Minimal lock-guarded mutable container for values shared across concurrent Tasks.
 final class LockedBox<T>: @unchecked Sendable {
     private var _value: T
-    private let lock = NSLock()
+    private let lock = NSRecursiveLock()
 
     init(_ value: T) {
         self._value = value
@@ -598,7 +602,7 @@ final class LockedBox<T>: @unchecked Sendable {
 /// while device-response tasks pass a concrete `ChallengeResult`.
 final class OnceContinuation: @unchecked Sendable {
     private var inner: CheckedContinuation<ChallengeResult?, Never>?
-    private let lock = NSLock()
+    private let lock = NSRecursiveLock()
 
     init(_ continuation: CheckedContinuation<ChallengeResult?, Never>) {
         self.inner = continuation

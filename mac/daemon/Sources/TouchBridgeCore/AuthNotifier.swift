@@ -10,7 +10,12 @@ import OSLog
 /// - Confirmation that auth succeeded
 public final class AuthNotifier: @unchecked Sendable {
     private let logger = Logger(subsystem: "dev.touchbridge", category: "AuthNotifier")
-    private var isEnabled: Bool = false
+    private let isEnabledLock = NSLock()
+    private var _isEnabled: Bool = false
+
+    private var isEnabled: Bool {
+        isEnabledLock.withLock { _isEnabled }
+    }
 
     public init() {}
 
@@ -18,11 +23,12 @@ public final class AuthNotifier: @unchecked Sendable {
     public func enable() {
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
-            self?.isEnabled = granted
+            guard let self else { return }
+            self.isEnabledLock.withLock { self._isEnabled = granted }
             if granted {
-                self?.logger.info("Notifications enabled")
+                self.logger.info("Notifications enabled")
             } else {
-                self?.logger.info("Notification permission denied: \(error?.localizedDescription ?? "unknown")")
+                self.logger.info("Notification permission denied: \(error?.localizedDescription ?? "unknown")")
             }
         }
     }

@@ -13,9 +13,10 @@ public final class ProximityMonitor: @unchecked Sendable {
 
     private let rssiThreshold: Int
     private let disconnectDelay: TimeInterval
-    private var isEnabled: Bool = false
-    private var disconnectTimer: DispatchWorkItem?
-    private var lastConnectedState: Bool = true
+    private let stateLock = NSLock()
+    private var _isEnabled: Bool = false
+    private var _disconnectTimer: DispatchWorkItem?
+    private var _lastConnectedState: Bool = true
     private let queue = DispatchQueue(label: "dev.touchbridge.proximity")
     private let lockAction: () -> Void
 
@@ -43,46 +44,65 @@ public final class ProximityMonitor: @unchecked Sendable {
 
     /// Enable proximity-based auto-lock.
     public func enable() {
-        isEnabled = true
+        stateLock.withLock { _isEnabled = true }
         logger.info("Proximity auto-lock enabled (threshold: \(self.rssiThreshold) dBm, delay: \(self.disconnectDelay)s)")
     }
 
     /// Disable proximity-based auto-lock.
     public func disable() {
-        isEnabled = false
-        disconnectTimer?.cancel()
-        disconnectTimer = nil
+        stateLock.withLock {
+            _isEnabled = false
+            _disconnectTimer?.cancel()
+            _disconnectTimer = nil
+        }
         logger.info("Proximity auto-lock disabled")
     }
 
     /// Called when BLE connection state changes.
     public func connectionStateChanged(connected: Bool) {
-        guard isEnabled else { return }
+        var enabled = false
+        var shouldStartTimer = false
+
+        stateLock.withLock {
+            enabled = _isEnabled
+            guard _isEnabled else { return }
+
+            if connected {
+                _disconnectTimer?.cancel()
+                _disconnectTimer = nil
+                _lastConnectedState = true
+            } else if _lastConnectedState {
+                _lastConnectedState = false
+                shouldStartTimer = true
+            }
+        }
+
+        guard enabled else { return }
 
         if connected {
-            // Cancel any pending lock
-            disconnectTimer?.cancel()
-            disconnectTimer = nil
-            lastConnectedState = true
             logger.info("Companion reconnected — auto-lock cancelled")
-        } else if lastConnectedState {
-            // Device disconnected — start countdown
-            lastConnectedState = false
+        } else if shouldStartTimer {
             logger.info("Companion disconnected — will lock in \(self.disconnectDelay)s if not reconnected")
 
             let workItem = DispatchWorkItem { [weak self] in
-                guard let self, self.isEnabled, !self.lastConnectedState else { return }
+                guard let self else { return }
+                let shouldLock: Bool = self.stateLock.withLock {
+                    guard self._isEnabled, !self._lastConnectedState else { return false }
+                    return true
+                }
+                guard shouldLock else { return }
                 self.logger.info("Proximity auto-lock triggered — locking screen")
                 self.lockScreen()
             }
-            disconnectTimer = workItem
+            stateLock.withLock { _disconnectTimer = workItem }
             queue.asyncAfter(deadline: .now() + disconnectDelay, execute: workItem)
         }
     }
 
     /// Called with RSSI updates from BLE.
     public func rssiUpdated(_ rssi: Int) {
-        guard isEnabled else { return }
+        let enabled = stateLock.withLock { _isEnabled }
+        guard enabled else { return }
 
         if rssi < rssiThreshold {
             logger.info("RSSI \(rssi) below threshold \(self.rssiThreshold) — companion moving out of range")
@@ -111,5 +131,5 @@ public final class ProximityMonitor: @unchecked Sendable {
         }
     }
 
-    public var enabled: Bool { isEnabled }
+    public var enabled: Bool { stateLock.withLock { _isEnabled } }
 }

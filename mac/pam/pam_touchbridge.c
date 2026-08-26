@@ -31,6 +31,55 @@
 #include <syslog.h>
 
 /*
+ * Escape a string for safe inclusion in a JSON string value.
+ * Escapes: " \ / \b \f \n \r \t and U+0000–U+001F as \uXXXX.
+ * Writes the escaped output to `out` (at most outlen-1 chars + NUL).
+ * Returns the number of bytes written (excluding NUL), or -1 if the
+ * output buffer is too small.
+ */
+static int json_escape(const char *in, char *out, size_t outlen)
+{
+    size_t i = 0;
+
+    if (outlen == 0) return -1;
+
+    for (const char *p = in; *p != '\0'; p++) {
+        unsigned char c = (unsigned char)*p;
+        const char *esc = NULL;
+        char ubuf[8];
+
+        switch (c) {
+            case '"':  esc = "\\\""; break;
+            case '\\': esc = "\\\\"; break;
+            case '\b': esc = "\\b";  break;
+            case '\f': esc = "\\f";  break;
+            case '\n': esc = "\\n";  break;
+            case '\r': esc = "\\r";  break;
+            case '\t': esc = "\\t";  break;
+            default:
+                if (c < 0x20) {
+                    snprintf(ubuf, sizeof(ubuf), "\\u%04x", c);
+                    esc = ubuf;
+                }
+                break;
+        }
+
+        if (esc != NULL) {
+            size_t len = strlen(esc);
+            if (i + len >= outlen) return -1;
+            memcpy(out + i, esc, len);
+            i += len;
+        } else {
+            if (i + 1 >= outlen) return -1;
+            out[i++] = (char)c;
+        }
+    }
+
+    out[i] = '\0';
+    return (int)i;
+}
+
+/*
  * Send an info message to the user's terminal via PAM conversation.
  * This is how PAM modules display "Check your phone..." type messages.
  */
@@ -241,10 +290,26 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 
     pam_notify(pamh, "TouchBridge: check your phone or watch...");
 
-    /* Build JSON request — simple snprintf, no JSON library needed */
+    /* Build JSON request with proper escaping of user-controlled strings.
+     * Without escaping, a username containing " or \ could break the JSON
+     * payload sent to the daemon (defense-in-depth — macOS usernames are
+     * typically restricted, but this prevents injection if restrictions
+     * are ever loosened or bypassed). */
+    char escaped_user[256];
+    char escaped_service[256];
+
+    if (json_escape(user, escaped_user, sizeof(escaped_user)) < 0) {
+        syslog(LOG_AUTH | LOG_ERR, "pam_touchbridge: username too long to escape");
+        goto cleanup;
+    }
+    if (json_escape(service, escaped_service, sizeof(escaped_service)) < 0) {
+        syslog(LOG_AUTH | LOG_ERR, "pam_touchbridge: service name too long to escape");
+        goto cleanup;
+    }
+
     bytes = snprintf(request, sizeof(request),
         "{\"action\":\"authenticate\",\"user\":\"%s\",\"service\":\"%s\",\"pid\":%d}\n",
-        user, service, getpid());
+        escaped_user, escaped_service, getpid());
 
     if (bytes < 0 || (size_t)bytes >= sizeof(request)) {
         syslog(LOG_AUTH | LOG_ERR, "pam_touchbridge: request too large");
