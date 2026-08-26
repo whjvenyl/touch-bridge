@@ -46,6 +46,7 @@ class BLEClient(private val context: Context) {
 
     private val descriptorWriteQueue = java.util.ArrayDeque<BluetoothGattDescriptor>()
     private var isWritingDescriptor = false
+    private var pendingNotifyCount = 0
 
     // Discovered characteristics
     private var sessionKeyChar: BluetoothGattCharacteristic? = null
@@ -271,7 +272,9 @@ class BLEClient(private val context: Context) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     Log.i(TAG, "Connected to Mac: $address")
                     gatt.discoverServices()
-                    listener?.onConnectionChanged(true, address)
+                    // Don't notify listener yet — wait for onServicesDiscovered
+                    // so that characteristics are available when the listener
+                    // tries to use them (e.g. sendSessionKey for ECDH).
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     Log.i(TAG, "Disconnected from Mac: $address")
@@ -305,10 +308,24 @@ class BLEClient(private val context: Context) {
 
             Log.i(TAG, "Characteristics discovered")
 
-            // Subscribe to notifications sequentially
+            // Subscribe to notifications sequentially.
+            // The ECDH session key exchange is deferred until all notification
+            // subscriptions complete — the daemon sends its session key back
+            // via notify, so we must be subscribed before writing our key.
+            pendingNotifyCount = 0
+            val charsToNotify = listOf(challengeChar, sessionKeyChar, pairingChar)
+            for (char in charsToNotify) {
+                if (char != null) pendingNotifyCount++
+            }
             enableNotifications(gatt, challengeChar)
             enableNotifications(gatt, sessionKeyChar)
             enableNotifications(gatt, pairingChar)
+
+            // If no characteristics need notification subscription (edge case),
+            // fire the callback immediately.
+            if (pendingNotifyCount == 0) {
+                listener?.onConnectionChanged(true, gatt.device.address)
+            }
         }
 
         override fun onDescriptorWrite(
@@ -319,6 +336,17 @@ class BLEClient(private val context: Context) {
             Log.i(TAG, "onDescriptorWrite: status=$status")
             isWritingDescriptor = false
             processDescriptorQueue(gatt)
+
+            // When all notification subscriptions are complete, the connection
+            // is ready for the ECDH key exchange. The daemon responds to our
+            // session key write with a notify, so we must be subscribed first.
+            if (pendingNotifyCount > 0) {
+                pendingNotifyCount--
+                if (pendingNotifyCount == 0) {
+                    Log.i(TAG, "All notifications subscribed — connection ready")
+                    listener?.onConnectionChanged(true, gatt.device.address)
+                }
+            }
         }
 
         override fun onCharacteristicChanged(
