@@ -33,6 +33,8 @@ struct TouchBridgeMenuApp: App {
         Settings {
             SettingsWindowView(state: appState)
         }
+        .windowResizability(.contentMinSize)
+        .windowToolbarStyle(.unified)
     }
 
     private var menuBarColor: Color {
