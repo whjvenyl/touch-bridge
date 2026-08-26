@@ -1,20 +1,26 @@
 #!/bin/bash
-# run-android.sh — Build and launch the TouchBridge Android companion in the emulator.
+# run-android.sh — Build and install the TouchBridge Android companion on a
+# device or emulator, then launch the main activity.
 #
-# Boots an AVD (if no device is already attached), builds the debug APK for the
-# selected module, installs it, and launches the main activity.
+# Device selection (in priority order):
+#   1. --device SERIAL   → use the given adb serial
+#   2. physical device   → any attached non-emulator in "device" state
+#   3. running emulator  → any booted emulator-* in "device" state
+#   4. boot the AVD      → launch the configured AVD and wait for boot
 #
 # Usage:
-#   bash scripts/run-android.sh              # phone app (default)
-#   bash scripts/run-android.sh phone        # phone app
-#   bash scripts/run-android.sh wear         # wear OS app
-#   bash scripts/run-android.sh --avd NAME   # override AVD
-#   bash scripts/run-android.sh --no-build   # skip gradle build, just install+launch
+#   bash scripts/run-android.sh                  # phone app, auto-pick device
+#   bash scripts/run-android.sh phone            # phone app
+#   bash scripts/run-android.sh wear             # wear OS app
+#   bash scripts/run-android.sh --device SERIAL  # target a specific adb serial
+#   bash scripts/run-android.sh --avd NAME       # override AVD to boot
+#   bash scripts/run-android.sh --no-build       # skip gradle build
+#   bash scripts/run-android.sh --list           # list attached devices and exit
 #
 # NOTE: The Android emulator has no real BLE radio. The companion will build and
-# run, but it cannot actually scan for / pair with the Mac daemon. Use this for
-# UI iteration and build verification. For real end-to-end testing, install the
-# APK on a physical device (see companion/android/README or scripts/install.sh).
+# run, but it cannot actually scan for / pair with the Mac daemon. For real
+# end-to-end testing, plug in a physical device (USB/Wi-Fi debugging enabled) and
+# run this script — it will be preferred over any emulator automatically.
 
 set -euo pipefail
 
@@ -25,15 +31,19 @@ ANDROID_DIR="$PROJECT_DIR/companion/android"
 # --- args ---
 MODULE="app"
 AVD_OVERRIDE=""
+DEVICE_OVERRIDE=""
 DO_BUILD=true
+LIST_ONLY=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     phone)  MODULE="app"  ;;
     wear)   MODULE="wear" ;;
     --avd)  AVD_OVERRIDE="$2"; shift ;;
+    --device) DEVICE_OVERRIDE="$2"; shift ;;
     --no-build) DO_BUILD=false ;;
+    --list) LIST_ONLY=true ;;
     -h|--help)
-      sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -64,22 +74,50 @@ echo "━━━ TouchBridge Android Companion ━━━"
 echo "Module: $MODULE   AVD: $AVD   Build: $DO_BUILD"
 echo ""
 
-# --- pick a device: reuse a booted emulator, else boot the AVD ---
-BOOTED_SERIAL=""
+# --- list attached devices and exit if --list ---
+if $LIST_ONLY; then
+  echo "Attached devices (adb):"
+  "$ADB" devices -l | tail -n +2 | grep -v '^$' || true
+  echo ""
+  echo "Available AVDs:"
+  "$EMULATOR" -list-avds | sed 's/^/    /'
+  exit 0
+fi
+
+# --- collect attached devices: physical first, then emulator ---
+PHYSICAL_SERIAL=""
+EMU_SERIAL=""
 while read -r line; do
-  # adb devices lines look like: "emulator-5554\tdevice"
+  # adb devices lines look like: "serial\tstate"
   serial="${line%%$'\t'*}"
   state="${line#*$'\t'}"
-  if [[ "$state" == "device" && "$serial" == emulator-* ]]; then
-    BOOTED_SERIAL="$serial"
-    break
+  [[ "$state" == "device" ]] || continue
+  if [[ "$serial" == emulator-* ]]; then
+    [[ -z "$EMU_SERIAL" ]] && EMU_SERIAL="$serial"
+  else
+    [[ -z "$PHYSICAL_SERIAL" ]] && PHYSICAL_SERIAL="$serial"
   fi
 done < <("$ADB" devices | tail -n +2 | grep -v '^$')
 
-if [[ -n "$BOOTED_SERIAL" ]]; then
-  echo "▸ Reusing running emulator: $BOOTED_SERIAL"
+# --- pick a device ---
+if [[ -n "$DEVICE_OVERRIDE" ]]; then
+  TARGET="$DEVICE_OVERRIDE"
+  # Verify it's actually present and in "device" state.
+  if ! "$ADB" devices | tail -n +2 | grep -v '^$' | cut -f1 | grep -qx "$TARGET"; then
+    echo "✗ Device '$TARGET' not found in 'adb devices'." >&2
+    echo "  Available:" >&2
+    "$ADB" devices | tail -n +2 | grep -v '^$' | sed 's/^/    /' >&2
+    exit 1
+  fi
+  echo "▸ Using specified device: $TARGET"
+elif [[ -n "$PHYSICAL_SERIAL" ]]; then
+  TARGET="$PHYSICAL_SERIAL"
+  echo "▸ Using physical device: $TARGET"
+elif [[ -n "$EMU_SERIAL" ]]; then
+  TARGET="$EMU_SERIAL"
+  echo "▸ Reusing running emulator: $TARGET"
 else
-  echo "▸ No emulator running. Booting AVD '$AVD'…"
+  echo "▸ No device attached. Booting AVD '$AVD'…"
   if ! "$EMULATOR" -list-avds | grep -qx "$AVD"; then
     echo "✗ AVD '$AVD' not found. Available:" >&2
     "$EMULATOR" -list-avds | sed 's/^/    /' >&2
@@ -104,10 +142,10 @@ else
     echo "✗ Emulator did not finish booting within 4 min." >&2
     exit 1
   fi
-  BOOTED_SERIAL="$("$ADB" devices | tail -n +2 | grep -v '^$' | head -1 | cut -f1)"
-  echo "  ✓ Booted: $BOOTED_SERIAL"
+  TARGET="$("$ADB" devices | tail -n +2 | grep -v '^$' | head -1 | cut -f1)"
+  echo "  ✓ Booted: $TARGET"
 fi
-ADB_ARGS="-s $BOOTED_SERIAL"
+ADB_ARGS="-s $TARGET"
 
 # --- build ---
 if $DO_BUILD; then
@@ -132,6 +170,10 @@ echo "▸ Launching ${ACTIVITY}…"
 "$ADB" $ADB_ARGS shell am start -n "$APPLICATION_ID/$ACTIVITY"
 
 echo ""
-echo "✓ Done. App: $APPLICATION_ID   Device: $BOOTED_SERIAL"
+echo "✓ Done. App: $APPLICATION_ID   Device: $TARGET"
 echo "  Logs:    $ADB $ADB_ARGS logcat -s TouchBridge:V"
-echo "  Stop:    $ADB $ADB_ARGS emu kill"
+if [[ "$TARGET" == emulator-* ]]; then
+  echo "  Stop:    $ADB $ADB_ARGS emu kill"
+else
+  echo "  Uninstall: $ADB $ADB_ARGS uninstall $APPLICATION_ID"
+fi
