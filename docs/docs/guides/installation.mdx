@@ -15,45 +15,53 @@ description: Build and install TouchBridge from source
 | Bluetooth | BLE support (all modern Macs) |
 | Companion | iOS 16+, Android 8+ |
 
-## Build from source (recommended)
+## Build from source
 
-```bash
-git clone https://github.com/HMAKT99/UnTouchID.git
-cd UnTouchID
+<Steps>
+  <Step title="Clone the repository">
 
-# Build everything and install
-sudo bash scripts/install.sh
-```
+  ```bash
+  git clone https://github.com/HMAKT99/UnTouchID.git
+  cd UnTouchID
+  ```
 
-The install script:
-- Generates protobuf code and builds the daemon (`touchbridge`)
-- Builds the PAM module as a universal binary
-- Ad-hoc signs the PAM module
-- Installs to `/usr/local/bin/` and `/usr/local/lib/pam/`
-- Creates the LaunchAgent for auto-start
-- Patches `/etc/pam.d/sudo` (with backup and confirmation)
+  </Step>
+  <Step title="Build and install">
 
-## Pair your device
+  ```bash
+  sudo bash scripts/install.sh
+  ```
 
-1. Open the **TouchBridge** menu bar app
-2. Click **Pair New Device**
-3. Scan the QR code with the TouchBridge app on your phone
-4. Approve the biometric prompt on your phone
+  The install script:
+  - Generates protobuf code and builds the daemon via Xcode
+  - Builds the PAM module as a universal binary
+  - Ad-hoc signs the PAM module
+  - Installs to `/usr/local/bin/` and `/usr/local/lib/pam/`
+  - Creates the LaunchAgent for auto-start
+  - Patches `/etc/pam.d/sudo` (with backup and confirmation)
 
-Alternatively, use the CLI:
+  </Step>
+  <Step title="Pair your device">
 
-```bash
-touchbridge pair
-```
+  Open the **TouchBridge** menu bar app, click **Pair New Device**, and scan the QR code with the TouchBridge app on your phone.
 
-## Test it
+  Or use the CLI:
 
-```bash
-sudo ls
-# → Biometric prompt appears on your phone
-# → Approve → sudo succeeds
-# → Deny or timeout → falls through to password
-```
+  ```bash
+  touchbridge pair
+  ```
+
+  </Step>
+  <Step title="Test it">
+
+  ```bash
+  sudo ls
+  ```
+
+  A biometric prompt appears on your phone. Approve it and `sudo` succeeds. Deny or timeout and it falls through to password.
+
+  </Step>
+</Steps>
 
 ## Uninstall
 

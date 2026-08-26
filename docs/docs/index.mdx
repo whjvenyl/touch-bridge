@@ -11,9 +11,11 @@ Free, open source alternative to Apple's $199 Touch ID keyboard. Works with iPho
 
 ## How it works
 
-1. **Install** the daemon and PAM module on your Mac
-2. **Pair** your phone or watch via QR code
-3. **Authenticate** — when you run `sudo`, a biometric prompt appears on your phone
+<Steps>
+  <Step title="Install">Install the daemon and PAM module on your Mac.</Step>
+  <Step title="Pair">Pair your phone or watch via QR code.</Step>
+  <Step title="Authenticate">When you run `sudo`, a biometric prompt appears on your phone. Approve it and sudo succeeds.</Step>
+</Steps>
 
 The approval happens over Bluetooth Low Energy (BLE) with end-to-end encryption. Your private key never leaves the Secure Enclave (iOS) or Android Keystore.
 
@@ -29,12 +31,27 @@ Then open the TouchBridge menu bar app and pair your device.
 
 ## Features
 
-- **Biometric auth for sudo** — Face ID, Touch ID, fingerprint
-- **Multi-device** — pair multiple phones/watches, first response wins
-- **Fail-safe** — if your phone is unreachable, falls back to password
-- **Cross-platform** — iOS, Android, Apple Watch, Wear OS
-- **Open source** — MIT licensed, audit the code yourself
+<CardGroup cols={3}>
+  <Card title="Biometric auth" href="/guides/installation" icon="fingerprint">
+    Face ID, Touch ID, or fingerprint for sudo and screensaver unlock.
+  </Card>
+  <Card title="Multi-device" href="/architecture/setup" icon="smartphone">
+    Pair multiple phones and watches. First response wins.
+  </Card>
+  <Card title="Fail-safe" href="/architecture/limitations" icon="shield-check">
+    If your phone is unreachable, falls back to password automatically.
+  </Card>
+  <Card title="Cross-platform" href="/architecture/setup" icon="devices">
+    iOS, Android, Apple Watch, and Wear OS companions.
+  </Card>
+  <Card title="Menu bar app" href="/guides/building" icon="layout-grid">
+    Bundles everything — no terminal required for end users.
+  </Card>
+  <Card title="Open source" href="https://github.com/HMAKT99/UnTouchID" icon="github">
+    MIT licensed. Audit the code yourself.
+  </Card>
+</CardGroup>
 
 :::note
-TouchBridge is in alpha. The iOS companion is production-ready. The Android companion has known protocol issues — see the [Architecture Review](/design/architecture-review).
+TouchBridge is in alpha. The iOS companion is production-ready. The Android companion has known protocol issues — see the [Architecture Review](/architecture/architecture-review).
 :::

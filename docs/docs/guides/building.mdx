@@ -32,71 +32,121 @@ bash scripts/build-all.sh test      # build + run tests
 
 This builds protocol, daemon, PAM, and menubar app. It does not build companion apps.
 
-## Protocol package (Swift)
+## Project structure
 
-```bash
-cd protocol/swift
-swift build
-swift test
-```
+<FileTree>
 
-## Daemon (Xcode)
+- protocol/
+  - proto/
+    - touchbridge.proto
+  - swift/
+    - Package.swift
+    - Sources/TouchBridgeProtocol/
+      - Constants.swift
+      - WireFormat.swift
+      - SessionCrypto.swift
+      - Generated/
+        - touchbridge.pb.swift
+  - generate.sh
+- mac/
+  - project.yml
+  - daemon/
+    - targets.yml
+    - Sources/TouchBridgeCore/
+    - Sources/touchbridge/
+    - Tests/TouchBridgeCoreTests/
+  - menubar/
+    - targets.yml
+    - TouchBridgeMenu/
+    - TouchBridgeHelper/
+  - pam/
+- companion/
+  - ios/
+    - project.yml
+  - android/
+- scripts/
+  - build-all.sh
+  - install.sh
+  - uninstall.sh
 
-```bash
-cd mac
-xcodegen generate
-xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge build
-xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge test
-```
+</FileTree>
 
-### Run tests by suite
+## Individual components
 
-```bash
-xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge test \
-  -only-testing:TouchBridgeCoreTests/ChallengeManagerTests
-xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge test \
-  -only-testing:TouchBridgeCoreTests/KeychainStoreTests
-```
+<Tabs>
+  <Tab title="Protocol">
 
-## PAM module (C, universal binary)
+  ```bash
+  cd protocol/swift
+  swift build
+  swift test
+  ```
 
-```bash
-make -C mac/pam
-```
+  </Tab>
+  <Tab title="Daemon">
 
-Produces `mac/pam/pam_touchbridge.so` (arm64 + x86_64).
+  ```bash
+  cd mac
+  xcodegen generate
+  xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge build
+  xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge test
+  ```
 
-## Menubar app (Xcode)
+  ### Run tests by suite
 
-```bash
-cd mac
-xcodegen generate
-xcodebuild -project TouchBridge.xcodeproj -scheme TouchBridgeMenu build
-```
+  ```bash
+  xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge test \
+    -only-testing:TouchBridgeCoreTests/ChallengeManagerTests
+  xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge test \
+    -only-testing:TouchBridgeCoreTests/KeychainStoreTests
+  ```
 
-The menubar app auto-bundles the daemon binary and PAM module into its Resources.
+  </Tab>
+  <Tab title="PAM module">
 
-## iOS companion (Xcode)
+  ```bash
+  make -C mac/pam
+  ```
 
-```bash
-cd companion/ios
-xcodegen generate
-open TouchBridge.xcodeproj
-```
+  Produces `mac/pam/pam_touchbridge.so` (arm64 + x86_64).
 
-Build from Xcode or command line:
+  </Tab>
+  <Tab title="Menubar app">
 
-```bash
-xcodebuild -project TouchBridge.xcodeproj -scheme TouchBridge \
-  -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build
-```
+  ```bash
+  cd mac
+  xcodegen generate
+  xcodebuild -project TouchBridge.xcodeproj -scheme TouchBridgeMenu build
+  ```
 
-## Android companion (Gradle)
+  The menubar app auto-bundles the daemon binary and PAM module into its Resources.
 
-```bash
-cd companion/android
-./gradlew :app:assembleDebug
-./gradlew :wear:assembleDebug
-```
+  </Tab>
+  <Tab title="iOS companion">
 
-Requires Android Studio or Android SDK with build tools.
+  ```bash
+  cd companion/ios
+  xcodegen generate
+  open TouchBridge.xcodeproj
+  ```
+
+  Or build from the command line:
+
+  ```bash
+  xcodebuild -project TouchBridge.xcodeproj -scheme TouchBridge \
+    -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build
+  ```
+
+  </Tab>
+  <Tab title="Android companion">
+
+  ```bash
+  cd companion/android
+  ./gradlew :app:assembleDebug
+  ./gradlew :wear:assembleDebug
+  ```
+
+  Requires Android Studio or Android SDK with build tools.
+
+  </Tab>
+</Tabs>
