@@ -21,9 +21,9 @@ if [[ "$BUILD_MODE" == "test" ]]; then
   RUN_TESTS=true
 fi
 
-SWIFT_BUILD_FLAGS=""
+XCODE_CONFIG="Debug"
 if [[ "$BUILD_MODE" == "release" ]]; then
-  SWIFT_BUILD_FLAGS="-c release"
+  XCODE_CONFIG="Release"
 fi
 
 echo "━━━ TouchBridge Build ━━━"
@@ -42,10 +42,10 @@ else
   echo ""
 fi
 
-# 1. Protocol package
+# 1. Protocol package (SPM — cached after first build)
 echo "▸ Building protocol package…"
 cd "$PROJECT_DIR/protocol/swift"
-swift build $SWIFT_BUILD_FLAGS 2>&1 | tail -3
+swift build 2>&1 | tail -3
 if [[ "$RUN_TESTS" == true ]]; then
   echo "▸ Testing protocol package…"
   swift test 2>&1 | tail -3
@@ -53,13 +53,14 @@ fi
 echo "  ✓ Protocol"
 echo ""
 
-# 2. Daemon
-echo "▸ Building daemon…"
-cd "$PROJECT_DIR/mac/daemon"
-swift build $SWIFT_BUILD_FLAGS 2>&1 | tail -3
+# 2. Daemon + Menubar (single Xcode project)
+echo "▸ Building macOS project (daemon + menubar)…"
+cd "$PROJECT_DIR/mac"
+xcodegen generate 2>&1 | tail -1
+xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge -configuration "$XCODE_CONFIG" build 2>&1 | tail -3
 if [[ "$RUN_TESTS" == true ]]; then
   echo "▸ Testing daemon…"
-  swift test 2>&1 | tail -3
+  xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge -configuration Debug test 2>&1 | tail -3
 fi
 echo "  ✓ Daemon"
 echo ""
@@ -70,33 +71,18 @@ make -C "$PROJECT_DIR/mac/pam" 2>&1 | tail -3
 echo "  ✓ PAM module"
 echo ""
 
-# 4. Menubar app (if xcodegen is available)
-if command -v xcodegen &>/dev/null; then
-  echo "▸ Building menubar app…"
-  cd "$PROJECT_DIR/mac/menubar"
-  xcodegen generate 2>&1 | tail -1
-  if [[ "$BUILD_MODE" == "release" ]]; then
-    xcodebuild -project TouchBridgeMenu.xcodeproj -scheme TouchBridgeMenu -configuration Release build 2>&1 | tail -3
-  else
-    xcodebuild -project TouchBridgeMenu.xcodeproj -scheme TouchBridgeMenu -configuration Debug build 2>&1 | tail -3
-  fi
-  echo "  ✓ Menubar app"
-  echo ""
-else
-  echo "▸ Skipping menubar app (xcodegen not installed)"
-  echo "  Install with: brew install xcodegen"
-  echo ""
-fi
+# 4. Menubar app (bundled in the same Xcode project)
+echo "▸ Building menubar app…"
+xcodebuild -project TouchBridge.xcodeproj -scheme TouchBridgeMenu -configuration "$XCODE_CONFIG" build 2>&1 | tail -3
+echo "  ✓ Menubar app"
+echo ""
 
 echo "━━━ Build Complete ━━━"
 echo ""
 echo "Built components:"
-echo "  • Protocol:  protocol/swift/.build/${BUILD_MODE}/"
-echo "  • Daemon:    mac/daemon/.build/${BUILD_MODE}/touchbridge"
-echo "  • CLI:       mac/daemon/.build/${BUILD_MODE}/touchbridge (serve, pair, logs, config)"
+echo "  • Protocol:  protocol/swift/.build/"
+echo "  • Daemon:    mac/ (DerivedData)"
 echo "  • PAM:       mac/pam/pam_touchbridge.so"
-if command -v xcodegen &>/dev/null; then
-  echo "  • Menubar:   mac/menubar/build/ (or DerivedData)"
-fi
+echo "  • Menubar:   mac/ (DerivedData)"
 echo ""
 echo "To install: sudo bash scripts/install.sh"

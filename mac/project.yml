@@ -1,9 +1,17 @@
-name: TouchBridgeMenu
+name: TouchBridge
 options:
   bundleIdPrefix: dev.touchbridge
   deploymentTarget:
     macOS: "13.0"
   xcodeVersion: "15.0"
+  generateEmptyDirectories: true
+
+packages:
+  TouchBridgeProtocol:
+    path: ../protocol/swift
+  ArgumentParser:
+    url: https://github.com/apple/swift-argument-parser.git
+    from: "1.3.0"
 
 settings:
   base:
@@ -12,15 +20,54 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
 
 targets:
+  # --- Daemon ---
+
+  TouchBridgeCore:
+    type: framework
+    platform: macOS
+    sources:
+      - path: daemon/Sources/TouchBridgeCore
+    dependencies:
+      - package: TouchBridgeProtocol
+    settings:
+      base:
+        PRODUCT_NAME: TouchBridgeCore
+        GENERATE_INFOPLIST_FILE: YES
+
+  touchbridge:
+    type: tool
+    platform: macOS
+    sources:
+      - path: daemon/Sources/touchbridge
+    dependencies:
+      - target: TouchBridgeCore
+      - package: ArgumentParser
+    settings:
+      base:
+        PRODUCT_NAME: touchbridge
+
+  TouchBridgeCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: daemon/Tests/TouchBridgeCoreTests
+    dependencies:
+      - target: TouchBridgeCore
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+
+  # --- Menubar ---
+
   TouchBridgeHelper:
     type: tool
     platform: macOS
     sources:
-      - path: TouchBridgeHelper
+      - path: menubar/TouchBridgeHelper
     info:
-      path: TouchBridgeHelper/Info.plist
+      path: menubar/TouchBridgeHelper/Info.plist
     entitlements:
-      path: TouchBridgeHelper/TouchBridgeHelper.entitlements
+      path: menubar/TouchBridgeHelper/TouchBridgeHelper.entitlements
       properties:
         com.apple.developer.service-management.managed-by-main-app: true
     settings:
@@ -33,10 +80,10 @@ targets:
     type: application
     platform: macOS
     sources:
-      - path: TouchBridgeMenu
-      - path: TouchBridgeHelper/HelperProtocol.swift
+      - path: menubar/TouchBridgeMenu
+      - path: menubar/TouchBridgeHelper/HelperProtocol.swift
     info:
-      path: TouchBridgeMenu/Info.plist
+      path: menubar/TouchBridgeMenu/Info.plist
       properties:
         CFBundleDisplayName: TouchBridge
         CFBundleShortVersionString: "1.0.0"
@@ -58,13 +105,10 @@ targets:
           - $(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/Contents/Resources/pam_touchbridge.so
         script: |
           set -euo pipefail
-          REPO_ROOT="$PROJECT_DIR/.."
           RESOURCES_DIR="$BUILT_PRODUCTS_DIR/$PRODUCT_NAME.app/Contents/Resources"
 
-          # Build daemon (release)
-          cd "$REPO_ROOT/daemon"
-          swift build -c release 2>&1
-          DAEMON_BIN="$(swift build -c release --show-bin-path)/touchbridge"
+          # Daemon binary is built by the touchbridge target in this same project
+          DAEMON_BIN="$BUILT_PRODUCTS_DIR/touchbridge"
           if [ ! -f "$DAEMON_BIN" ]; then
             echo "error: touchbridge binary not found at $DAEMON_BIN"
             exit 1
@@ -75,7 +119,7 @@ targets:
           chmod 755 "$RESOURCES_DIR/touchbridge"
 
           # Build PAM module (universal binary)
-          cd "$REPO_ROOT/pam"
+          cd "$PROJECT_DIR/pam"
           make clean 2>/dev/null || true
           make 2>&1
           if [ ! -f "pam_touchbridge.so" ]; then
@@ -99,5 +143,20 @@ targets:
           mkdir -p "$LAUNCH_DAEMONS_DIR"
           cp "$BUILT_PRODUCTS_DIR/dev.touchbridge.helper" "$LAUNCH_DAEMONS_DIR/dev.touchbridge.helper"
           chmod 755 "$LAUNCH_DAEMONS_DIR/dev.touchbridge.helper"
-          cp "$PROJECT_DIR/TouchBridgeHelper/dev.touchbridge.helper.plist" "$LAUNCH_DAEMONS_DIR/dev.touchbridge.helper.plist"
+          cp "$PROJECT_DIR/menubar/TouchBridgeHelper/dev.touchbridge.helper.plist" "$LAUNCH_DAEMONS_DIR/dev.touchbridge.helper.plist"
           echo "Embedded privileged helper in $LAUNCH_DAEMONS_DIR"
+
+schemes:
+  touchbridge:
+    build:
+      targets:
+        touchbridge: all
+    test:
+      targets:
+        - TouchBridgeCoreTests
+  TouchBridgeMenu:
+    build:
+      targets:
+        TouchBridgeMenu: all
+        touchbridge: all
+        TouchBridgeHelper: all

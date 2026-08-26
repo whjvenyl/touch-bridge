@@ -1,18 +1,12 @@
 # Xcode
+build/
+DerivedData/
 xcuserdata/
-*.hmap
-*.ipa
-*.dSYM
-*.dSYM.zip
 
-# Swift Package Manager
-.build/
-.swiftpm/
+# Generated Xcode project (xcodegen)
+TouchBridge.xcodeproj/
 
-# Generated Xcode projects (xcodegen)
-TouchBridgeMenu.xcodeproj/
-
-# C build artifacts
-*.so
-*_arm64.so
-*_x86_64.so
+# Legacy SPM artifacts (daemon was SPM before moving to Xcode)
+daemon/.build/
+daemon/.swiftpm/
+daemon/Package.resolved
