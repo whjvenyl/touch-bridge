@@ -425,3 +425,43 @@ enum SettingsLayout {
     /// Default corner radius for group boxes.
     static let groupCornerRadius: CGFloat = 10
 }
+
+// MARK: - Remove sidebar toggle
+
+/// Removes the sidebar toggle button from a NavigationSplitView's toolbar.
+///
+/// Inspired by Ice/Thaw's `removeSidebarToggle()` modifier. The sidebar
+/// toggle is automatically added by NavigationSplitView but isn't wanted
+/// in a settings window where the sidebar should always be visible.
+extension View {
+    func removeSidebarToggle() -> some View {
+        background {
+            RemoveSidebarToggleHelper()
+        }
+    }
+}
+
+private struct RemoveSidebarToggleHelper: View {
+    @State private var hasRemoved = false
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onAppear {
+                guard !hasRemoved else { return }
+                hasRemoved = true
+                // Find the window and remove the sidebar toggle toolbar item
+                DispatchQueue.main.async {
+                    for window in NSApplication.shared.windows {
+                        if let toolbar = window.toolbar {
+                            // The sidebar toggle is typically the first item
+                            // Remove it by identifier
+                            if let index = toolbar.items.firstIndex(where: { $0.itemIdentifier.rawValue == "NSToolbarToggleSidebarItem" }) {
+                                toolbar.removeItem(at: index)
+                            }
+                        }
+                    }
+                }
+            }
+    }
+}

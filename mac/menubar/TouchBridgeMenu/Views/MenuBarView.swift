@@ -3,7 +3,6 @@ import SwiftUI
 struct MenuBarView: View {
     @ObservedObject var state: MenuBarState
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -286,8 +285,7 @@ struct MenuBarView: View {
             .padding(.vertical, 4)
 
             Button {
-                openSettings()
-                NSApplication.shared.deactivate()
+                openSettingsWindow()
             } label: {
                 Label("Settings…", systemImage: "gear")
             }
@@ -313,6 +311,26 @@ struct MenuBarView: View {
     }
 
     // MARK: - Helpers
+
+    /// Open the settings window, or focus it if already open.
+    private func openSettingsWindow() {
+        // Check if a settings window is already open
+        let settingsWindows = NSApplication.shared.windows.filter { window in
+            window.title.contains("Settings") || window.title.contains("TouchBridge Settings")
+        }
+
+        if let window = settingsWindows.first {
+            // Focus the existing window
+            window.makeKeyAndOrderFront(nil)
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        } else {
+            // Open a new settings window
+            openWindow(id: "settings")
+        }
+
+        // Close the menu bar popover
+        NSApplication.shared.deactivate()
+    }
 
     private var headerColor: Color {
         if !state.isInstalled { return .red }

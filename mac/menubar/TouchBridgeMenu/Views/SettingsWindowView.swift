@@ -52,8 +52,11 @@ struct SettingsWindowView: View {
             detailPane
                 .id(selection) // Force view recreation on pane switch
         }
+        .navigationSplitViewStyle(.balanced)
+        .removeSidebarToggle()
         .navigationTitle(selection?.title ?? "Settings")
         .toolbar {
+            // Back/Forward navigation between settings panes
             ToolbarItem(placement: .navigation) {
                 ControlGroup {
                     Button {

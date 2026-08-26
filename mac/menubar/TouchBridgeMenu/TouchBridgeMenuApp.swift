@@ -27,14 +27,16 @@ struct TouchBridgeMenuApp: App {
         }
         .windowResizability(.contentSize)
 
-        // Settings window — uses the Settings scene so SwiftUI manages a
-        // single instance (focuses existing window instead of opening duplicates).
-        // Opened from the menu bar via openSettings environment action.
-        Settings {
+        // Settings window — uses WindowGroup with single-instance management.
+        // We focus the existing window if it's already open (via NSApp check
+        // in the menu bar action), rather than relying on the Settings scene
+        // which has restrictive toolbar/window styling support.
+        WindowGroup("TouchBridge Settings", id: "settings") {
             SettingsWindowView(state: appState)
         }
         .windowResizability(.contentMinSize)
         .windowToolbarStyle(.unified)
+        .defaultSize(width: 720, height: 520)
     }
 
     private var menuBarColor: Color {
