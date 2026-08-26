@@ -27,6 +27,7 @@ class MenuBarState: ObservableObject {
     @Published var isPairing: Bool = false
     @Published var pairingQRData: String?
     @Published var pairingError: String?
+    @Published var pairingSucceeded: Bool = false
 
     // Recent audit log events
     @Published var recentEvents: [AuthEvent] = []
@@ -351,6 +352,9 @@ class MenuBarState: ObservableObject {
             if isPairing && !newStatus.isPairingActive {
                 isPairing = false
                 pairingQRData = nil
+                // Pairing completed — mark as succeeded so the pairing window
+                // can show a success message before closing.
+                pairingSucceeded = pairingError == nil
             }
         } catch {
             status = nil
@@ -378,6 +382,7 @@ class MenuBarState: ObservableObject {
         isPairing = true
         pairingError = nil
         pairingQRData = nil
+        pairingSucceeded = false
 
         Task {
             do {
@@ -395,6 +400,7 @@ class MenuBarState: ObservableObject {
             try? await client.cancelPairing()
             isPairing = false
             pairingQRData = nil
+            pairingSucceeded = false
         }
     }
 

@@ -21,8 +21,27 @@ struct PairingView: View {
                     .multilineTextAlignment(.center)
             }
 
-            // QR code or loading
-            if let qrData = state.pairingQRData,
+            // QR code, loading, success, or error
+            if state.pairingSucceeded {
+                VStack(spacing: 12) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.green)
+                    Text("Pairing Successful")
+                        .font(.headline)
+                    if let device = state.status?.pairedDevices.last {
+                        Text("\(device.displayName) is now paired and ready.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    } else {
+                        Text("Your device is now paired and ready.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: 220, height: 220)
+            } else if let qrData = state.pairingQRData,
                let qrImage = generateQRCode(from: qrData) {
                 Image(nsImage: qrImage)
                     .interpolation(.none)
@@ -50,8 +69,8 @@ struct PairingView: View {
                 .frame(width: 220, height: 220)
             }
 
-            // Pairing data (manual entry fallback)
-            if let qrData = state.pairingQRData {
+            // Pairing data (manual entry fallback) — hidden on success
+            if let qrData = state.pairingQRData, !state.pairingSucceeded {
                 DisclosureGroup("Manual Pairing Data") {
                     Text(qrData)
                         .font(.system(.caption, design: .monospaced))
@@ -88,10 +107,10 @@ struct PairingView: View {
                     Button("Close") {
                         NSApplication.shared.keyWindow?.close()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderedProminent)
                 }
                 Spacer()
-                if !state.isPairing {
+                if !state.isPairing && !state.pairingSucceeded {
                     Button("Try Again") {
                         state.startPairing()
                     }
@@ -102,13 +121,22 @@ struct PairingView: View {
         .padding(24)
         .frame(width: 480, height: 600)
         .onAppear {
-            if !state.isPairing && state.pairingQRData == nil {
+            if !state.isPairing && state.pairingQRData == nil && !state.pairingSucceeded {
                 state.startPairing()
             }
         }
         .onDisappear {
             if state.isPairing {
                 state.cancelPairing()
+            }
+        }
+        .onChange(of: state.pairingSucceeded) { succeeded in
+            // Auto-close the pairing window 3 seconds after success,
+            // giving the user time to see the confirmation.
+            if succeeded {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    NSApplication.shared.keyWindow?.close()
+                }
             }
         }
     }
