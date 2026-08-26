@@ -79,9 +79,6 @@ sidebar:
 
 ## Threat Model
 
-<Columns>
-  <Column>
-
 ### What we protect against
 
 - **Credential theft**: passwords never entered for TouchBridge-approved auth
@@ -90,9 +87,6 @@ sidebar:
 - **Unauthorized pairing**: single-use token, QR ceremony required
 - **Silent approval**: biometric gate on companion device
 
-  </Column>
-  <Column>
-
 ### What we don't protect against
 
 - **Physical device theft**: if your phone is unlocked, an attacker could approve
@@ -100,9 +94,6 @@ sidebar:
 - **macOS kernel compromise**: SIP-protected paths are out of scope
 - **BLE jamming**: denial of service falls through to password
 
-  </Column>
-</Columns>
-
 :::note
-TouchBridge is **fail-open to password**. If anything goes wrong — daemon down, phone unreachable, BLE jammed, timeout — the normal password prompt appears. You are never locked out.
+TouchBridge is fail-open to password. If anything goes wrong — daemon down, phone unreachable, BLE jammed, timeout — the normal password prompt appears. You are never locked out.
 :::
