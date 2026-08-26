@@ -5,6 +5,7 @@ import SwiftProtobuf
 public enum WireFormatError: Error, Sendable {
     case messageTooLarge(Int)
     case messageTooSmall
+    case versionMismatch(expected: UInt8, actual: UInt8)
     case unknownMessageType(UInt8)
     case encodingFailed
     case decodingFailed
@@ -38,9 +39,22 @@ public struct WireFormat: Sendable {
     }
 
     /// Decode a wire format message into its type and raw protobuf payload.
+    ///
+    /// Validates the version byte (must match `TouchBridgeConstants.protocolVersion`)
+    /// and checks minimum size. Throws on mismatch — callers should catch and
+    /// drop the malformed frame. This matches the Kotlin `WireFormat.decode`
+    /// behavior, which returns null on the same conditions.
     public static func decode(data: Data) throws -> (type: TBMessageType, payload: Data) {
         guard data.count >= headerSize else {
             throw WireFormatError.messageTooSmall
+        }
+
+        let versionByte = data[data.startIndex]
+        guard versionByte == TouchBridgeConstants.protocolVersion else {
+            throw WireFormatError.versionMismatch(
+                expected: TouchBridgeConstants.protocolVersion,
+                actual: versionByte
+            )
         }
 
         let typeByte = data[data.startIndex + 1]

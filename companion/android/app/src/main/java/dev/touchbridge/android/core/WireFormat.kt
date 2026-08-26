@@ -24,8 +24,16 @@ object WireFormat {
     const val TYPE_IDENTIFY: Byte = 6
 
     /// Encode a protobuf payload with the wire format header.
+    ///
+    /// Throws `IllegalArgumentException` if the total size (header + payload)
+    /// exceeds `Constants.MAX_MESSAGE_SIZE`. This matches the Swift
+    /// `WireFormat.encode` behavior, which throws `messageTooLarge`.
     fun encode(type: Byte, payload: ByteArray): ByteArray {
-        val result = ByteArray(2 + payload.size)
+        val totalSize = 2 + payload.size
+        require(totalSize <= Constants.MAX_MESSAGE_SIZE) {
+            "WireFormat.encode: message too large ($totalSize > ${Constants.MAX_MESSAGE_SIZE})"
+        }
+        val result = ByteArray(totalSize)
         result[0] = Constants.PROTOCOL_VERSION
         result[1] = type
         System.arraycopy(payload, 0, result, 2, payload.size)

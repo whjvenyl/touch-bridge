@@ -69,6 +69,15 @@ import Foundation
     }
 }
 
+@Test func versionMismatchThrows() throws {
+    // Valid size but wrong version byte (0x02 instead of 0x01)
+    let data = Data([0x02, 0x01, 0x00])
+
+    #expect(throws: WireFormatError.self) {
+        try WireFormat.decode(data: data)
+    }
+}
+
 @Test func unknownTypeReturnsUnrecognized() throws {
     var data = Data([TouchBridgeConstants.protocolVersion, 0xFF])
     data.append(Data([0x00])) // minimal protobuf payload
