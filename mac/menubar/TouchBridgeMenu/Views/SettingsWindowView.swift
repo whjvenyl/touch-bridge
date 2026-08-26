@@ -14,7 +14,7 @@ struct SettingsWindowView: View {
             AboutView()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 520, height: 400)
+        .frame(width: 560, height: 420)
     }
 }
 
@@ -24,13 +24,16 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Daemon") {
+            // MARK: - Service
+
+            Section {
                 LabeledContent("Status") {
-                    HStack {
+                    HStack(spacing: 6) {
                         Circle()
                             .fill(state.isDaemonRunning ? .green : .red)
                             .frame(width: 8, height: 8)
                         Text(state.isDaemonRunning ? "Running" : "Stopped")
+                            .foregroundStyle(state.isDaemonRunning ? .primary : .secondary)
                     }
                 }
 
@@ -40,26 +43,35 @@ struct GeneralSettingsView: View {
                 )) {
                     Text("Launch daemon at login")
                 }
+                .toggleStyle(.switch)
 
-                HStack {
-                    if state.isDaemonRunning {
-                        Button("Stop Daemon") { state.stopDaemon() }
-                            .buttonStyle(.bordered)
-                    } else {
-                        Button("Start Daemon") { state.startDaemon() }
-                            .buttonStyle(.borderedProminent)
+                if state.isDaemonRunning {
+                    Button("Stop Daemon", role: .destructive) {
+                        state.stopDaemon()
                     }
+                    .buttonStyle(.bordered)
+                } else {
+                    Button("Start Daemon") {
+                        state.startDaemon()
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
+            } header: {
+                Text("Service")
+            } footer: {
+                Text("The daemon runs in the background and handles authentication requests from PAM.")
             }
 
-            Section("Authentication Surfaces") {
+            // MARK: - Authentication Surfaces
+
+            Section {
                 Toggle(isOn: Binding(
                     get: { state.sudoEnabled },
                     set: { newVal in
                         Task { await state.togglePAMSurface("sudo", enabled: newVal) }
                     }
                 )) {
-                    Label("sudo", systemImage: "terminal")
+                    Label("Use TouchBridge for sudo", systemImage: "terminal")
                 }
                 .toggleStyle(.switch)
 
@@ -69,41 +81,26 @@ struct GeneralSettingsView: View {
                         Task { await state.togglePAMSurface("screensaver", enabled: newVal) }
                     }
                 )) {
-                    Label("Screensaver unlock", systemImage: "lock.open")
+                    Label("Use TouchBridge for screen saver unlock", systemImage: "lock.open")
                 }
                 .toggleStyle(.switch)
 
                 if state.isInstalling {
-                    HStack {
+                    HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
-                        Text("Applying…")
+                        Text("Applying changes…")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
+            } header: {
+                Text("Authentication Surfaces")
+            } footer: {
+                Text("Choose which authentication prompts should offer TouchBridge. Your password always remains available as a fallback.")
             }
 
-            Section("BLE") {
-                if let status = state.status {
-                    LabeledContent("Advertising") {
-                        Text(status.isAdvertising ? "Yes" : "No")
-                            .foregroundStyle(status.isAdvertising ? .green : .secondary)
-                    }
-                    LabeledContent("Connected centrals") {
-                        Text("\(status.connectedDevices.count)")
-                    }
-                } else {
-                    Text("Daemon not connected")
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("Statistics") {
-                LabeledContent("Successful auths") {
-                    Text("\(state.authCount)")
-                }
-            }
+            // MARK: - Uninstall
 
             Section {
                 Button("Uninstall TouchBridge…", role: .destructive) {
@@ -111,7 +108,7 @@ struct GeneralSettingsView: View {
                 }
             }
         }
-        .padding()
+        .formStyle(.grouped)
         .alert("Uninstall TouchBridge?", isPresented: $showUninstallAlert) {
             Button("Uninstall", role: .destructive) {
                 Task { await state.uninstallSystem() }
@@ -128,7 +125,7 @@ struct DevicesSettingsView: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 0) {
             if let status = state.status {
                 if status.pairedDevices.isEmpty {
                     VStack(spacing: 12) {
@@ -197,6 +194,33 @@ struct DevicesSettingsView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
                 }
+
+                // MARK: - Connection status
+
+                Divider()
+
+                Form {
+                    Section {
+                        LabeledContent("Advertising") {
+                            Text(status.isAdvertising ? "Active" : "Inactive")
+                                .foregroundStyle(status.isAdvertising ? .green : .secondary)
+                        }
+
+                        LabeledContent("Connected devices") {
+                            Text("\(status.connectedDevices.count)")
+                        }
+
+                        LabeledContent("Successful authentications") {
+                            Text("\(state.authCount)")
+                        }
+                    } header: {
+                        Text("Connection")
+                    } footer: {
+                        Text("The daemon advertises over Bluetooth Low Energy so paired devices can reconnect automatically.")
+                    }
+                }
+                .formStyle(.grouped)
+                .frame(maxHeight: .infinity)
             } else {
                 VStack(spacing: 8) {
                     ProgressView()
@@ -207,7 +231,6 @@ struct DevicesSettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .padding()
     }
 
     private func formatDate(_ date: Date) -> String {
