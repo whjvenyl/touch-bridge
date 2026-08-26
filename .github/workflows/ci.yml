@@ -7,29 +7,17 @@ on:
     branches: [main]
 
 jobs:
-  daemon-tests:
-    name: Daemon Tests
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build daemon
-        run: cd mac/daemon && swift build
-
-      - name: Run tests
-        run: cd mac/daemon && swift test
-
-      - name: Build PAM module
-        run: make -C mac/pam
-
-      - name: Verify PAM binary
-        run: file mac/pam/pam_touchbridge.so
-
   protocol-tests:
     name: Protocol Tests
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install protobuf tools
+        run: brew install protobuf swift-protobuf
+
+      - name: Generate protobuf code
+        run: bash protocol/generate.sh
 
       - name: Build protocol
         run: cd protocol/swift && swift build
@@ -37,14 +25,86 @@ jobs:
       - name: Run tests
         run: cd protocol/swift && swift test
 
+  daemon-tests:
+    name: Daemon Tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install protobuf tools
+        run: brew install protobuf swift-protobuf
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate protobuf code
+        run: bash protocol/generate.sh
+
+      - name: Generate Xcode project
+        run: cd mac && xcodegen generate
+
+      - name: Build daemon
+        run: |
+          cd mac
+          xcodebuild -project TouchBridge.xcodeproj \
+            -scheme touchbridge \
+            -destination 'platform=macOS' \
+            build
+
+      - name: Run tests
+        run: |
+          cd mac
+          xcodebuild -project TouchBridge.xcodeproj \
+            -scheme touchbridge \
+            -destination 'platform=macOS' \
+            test
+
+      - name: Build PAM module
+        run: make -C mac/pam
+
+      - name: Verify PAM binary
+        run: file mac/pam/pam_touchbridge.so
+
+  menubar-build:
+    name: Menubar Build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install protobuf tools
+        run: brew install protobuf swift-protobuf
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate protobuf code
+        run: bash protocol/generate.sh
+
+      - name: Generate Xcode project
+        run: cd mac && xcodegen generate
+
+      - name: Build menubar app
+        run: |
+          cd mac
+          xcodebuild -project TouchBridge.xcodeproj \
+            -scheme TouchBridgeMenu \
+            -destination 'platform=macOS' \
+            build
+
   ios-build:
     name: iOS Build
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install protobuf tools
+        run: brew install protobuf swift-protobuf
+
       - name: Install XcodeGen
         run: brew install xcodegen
+
+      - name: Generate protobuf code
+        run: bash protocol/generate.sh
 
       - name: Generate Xcode project
         run: cd companion/ios && xcodegen generate
