@@ -54,7 +54,7 @@ final class DaemonClient {
 
     /// Query daemon status (paired devices, connections, advertising, pairing state).
     func getStatus() async throws -> DaemonStatus {
-        let response = try await sendRequest(#"{"action":"status"}"#)
+        let response = try await sendRequest(["action": "status"])
         guard response.result == "success",
               let statusData = response.statusData,
               let status = try? JSONDecoder.iso8601.decode(DaemonStatus.self, from: statusData) else {
@@ -65,7 +65,7 @@ final class DaemonClient {
 
     /// Start a pairing session. Returns the QR payload JSON string.
     func startPairing() async throws -> String {
-        let response = try await sendRequest(#"{"action":"pair"}"#)
+        let response = try await sendRequest(["action": "pair"])
         guard response.result == "success", let pairingData = response.pairingData else {
             throw DaemonError.daemonError(response.reason ?? "unknown")
         }
@@ -74,7 +74,7 @@ final class DaemonClient {
 
     /// Cancel an active pairing session.
     func cancelPairing() async throws {
-        let response = try await sendRequest(#"{"action":"cancelPairing"}"#)
+        let response = try await sendRequest(["action": "cancelPairing"])
         guard response.result == "success" else {
             throw DaemonError.daemonError(response.reason ?? "unknown")
         }
@@ -82,8 +82,7 @@ final class DaemonClient {
 
     /// Unpair a device by ID.
     func unpairDevice(deviceID: String) async throws {
-        let req = #"{"action":"unpair","deviceID":"\#(deviceID)"}"#
-        let response = try await sendRequest(req)
+        let response = try await sendRequest(["action": "unpair", "deviceID": deviceID])
         guard response.result == "success" else {
             throw DaemonError.daemonError(response.reason ?? "unknown")
         }
@@ -98,9 +97,20 @@ final class DaemonClient {
         let pairingData: String?
     }
 
-    private func sendRequest(_ json: String) async throws -> RawResponse {
+    private func sendRequest(_ payload: [String: Any]) async throws -> RawResponse {
         guard isSocketAvailable else {
             throw DaemonError.socketUnavailable
+        }
+
+        // Encode via JSONSerialization so user-supplied values (e.g. deviceID)
+        // are properly escaped — never raw-interpolated into a JSON string.
+        let requestData: Data
+        do {
+            var data = try JSONSerialization.data(withJSONObject: payload)
+            data.append(0x0A) // newline terminator expected by the daemon
+            requestData = data
+        } catch {
+            throw DaemonError.parseError
         }
 
         return try await withCheckedThrowingContinuation { continuation in
@@ -136,7 +146,6 @@ final class DaemonClient {
                 }
 
                 // Send request
-                let requestData = (json + "\n").data(using: .utf8)!
                 _ = requestData.withUnsafeBytes { ptr in
                     send(fd, ptr.baseAddress!, ptr.count, 0)
                 }

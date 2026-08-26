@@ -144,11 +144,19 @@ private func authenticateViaDaemon(socketPath: String, timeout: TimeInterval) ->
     var tv = timeval(tv_sec: Int(timeout), tv_usec: 0)
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
 
-    // Send auth request
+    // Send auth request — build JSON via JSONSerialization to avoid string
+    // interpolation injection (user-controlled fields must not be raw-interpolated).
     let user = NSUserName()
-    let request = "{\"action\":\"authenticate\",\"user\":\"\(user)\",\"service\":\"authplugin_system\",\"pid\":\(getpid())}\n"
-
-    guard let requestData = request.data(using: .utf8) else { return false }
+    let payload: [String: Any] = [
+        "action": "authenticate",
+        "user": user,
+        "service": "authplugin_system",
+        "pid": getpid(),
+    ]
+    guard var requestData = try? JSONSerialization.data(withJSONObject: payload) else {
+        return false
+    }
+    requestData.append(0x0A) // newline terminator expected by the daemon
     let sent = requestData.withUnsafeBytes { ptr in
         send(fd, ptr.baseAddress!, ptr.count, 0)
     }
