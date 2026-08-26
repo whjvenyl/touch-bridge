@@ -181,13 +181,17 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
     }
 
     fun sendAuthResponse(challengeID: String, signature: ByteArray) {
-        val deviceID = android.os.Build.MODEL
+        // Use the stable deviceID from pairing (stored UUID), not Build.MODEL.
+        // The daemon uses this to look up the paired device's public key.
+        val deviceID = getOrCreateDeviceID()
         try {
-            // Build the response payload, encrypt it, then frame with wire format header
+            // Build the response payload as plaintext protobuf. The daemon
+            // expects plaintext ChallengeResponse — the signature itself
+            // proves possession of the paired private key, so encryption
+            // is unnecessary (and would cause a decrypt failure on the daemon).
             val responsePayload = challengeHandler.buildResponsePayload(challengeID, signature, deviceID)
-            val encryptedResponse = challengeHandler.encrypt(responsePayload)
 
-            if (bleClient.sendResponse(encryptedResponse)) {
+            if (bleClient.sendResponse(responsePayload)) {
                 _uiState.value = _uiState.value.copy(
                     challengeCount = _uiState.value.challengeCount + 1,
                     statusMessage = "Authenticated successfully",
@@ -250,11 +254,15 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
 
     override fun onChallengeReceived(data: ByteArray, deviceAddress: String) {
         try {
-            val decrypted = challengeHandler.decrypt(data)
-            val challenge = challengeHandler.parseChallenge(decrypted)
-            
+            // The daemon sends TBChallengeIssued as a plaintext protobuf with
+            // only the encryptedNonce field encrypted. Parse the protobuf first,
+            // then decrypt the nonce field.
+            val challenge = challengeHandler.parseChallenge(data)
+            val decryptedNonce = challengeHandler.decrypt(challenge.encryptedNonce)
+            val decryptedChallenge = challenge.copy(encryptedNonce = decryptedNonce)
+
             viewModelScope.launch {
-                _authRequest.emit(challenge)
+                _authRequest.emit(decryptedChallenge)
             }
             
             _uiState.value = _uiState.value.copy(

@@ -212,12 +212,14 @@ class BLEClient(private val context: Context) {
     }
 
     /**
-     * Send a challenge response (type 4) — encrypted payload with wire format header.
-     * The caller provides the already-encrypted payload; we prepend the header.
+     * Send a challenge response (type 4) — plaintext protobuf with wire format header.
+     * The caller provides the plaintext ChallengeResponse protobuf; we prepend the
+     * [version][type] header. The signature in the response proves possession of
+     * the paired private key, so encryption is unnecessary.
      */
-    fun sendResponse(encryptedPayload: ByteArray): Boolean {
+    fun sendResponse(payload: ByteArray): Boolean {
         val char = responseChar ?: return false
-        val framed = WireFormat.encode(WireFormat.TYPE_CHALLENGE_RESPONSE, encryptedPayload)
+        val framed = WireFormat.encode(WireFormat.TYPE_CHALLENGE_RESPONSE, payload)
         return queueWrite(char, framed)
     }
 
