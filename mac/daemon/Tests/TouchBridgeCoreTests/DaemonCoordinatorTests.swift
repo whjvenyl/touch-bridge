@@ -319,20 +319,26 @@ private func makeTestCoordinator() -> (
     coordinator: DaemonCoordinator,
     bleServer: MockBLEServer,
     keychain: KeychainStore,
-    auditLog: AuditLog
+    auditLog: AuditLog,
+    runtimeStore: DeviceRuntimeStore
 ) {
     let bleServer = MockBLEServer()
     let keychain = KeychainStore(service: "dev.touchbridge.test.\(UUID().uuidString)")
     let logDir = FileManager.default.temporaryDirectory
         .appendingPathComponent("tb-test-\(UUID().uuidString)")
     let auditLog = AuditLog(logDirectory: logDir)
+    let runtimeStore = DeviceRuntimeStore(
+        filePath: FileManager.default.temporaryDirectory
+            .appendingPathComponent("tb-runtime-\(UUID().uuidString).json").path
+    )
 
     let coordinator = DaemonCoordinator(
         keychainStore: keychain,
         auditLog: auditLog,
+        runtimeStore: runtimeStore,
         bleServer: bleServer
     )
-    return (coordinator, bleServer, keychain, auditLog)
+    return (coordinator, bleServer, keychain, auditLog, runtimeStore)
 }
 
 /// Register a companion's signing key in the keychain so `identify` and auth work.
@@ -387,7 +393,7 @@ enum TestSetupError: Error { case ecdhFailed }
 // MARK: - Session Lifecycle Tests
 
 @Test func connectCreatesReadySession() async throws {
-    let (coordinator, bleServer, _, _) = makeTestCoordinator()
+    let (coordinator, bleServer, _, _, _) = makeTestCoordinator()
     let centralID = UUID()
 
     #expect(coordinator.readyCentrals.isEmpty)
@@ -397,7 +403,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func ecdhExchangeProducesReadySession() async throws {
-    let (coordinator, bleServer, _, _) = makeTestCoordinator()
+    let (coordinator, bleServer, _, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
 
     bleServer.simulateConnect(companion.centralID)
@@ -414,7 +420,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func ecdhWithoutConnectCreatesRecoverableSession() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
 
@@ -452,7 +458,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func disconnectClearsSession() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
 
@@ -464,7 +470,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func multipleCompanionsCanConnectSimultaneously() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let c1 = CompanionSimulator()
     let c2 = CompanionSimulator()
     try register(c1, in: keychain)
@@ -479,7 +485,7 @@ enum TestSetupError: Error { case ecdhFailed }
 // MARK: - Identify Tests
 
 @Test func identifyKnownDeviceSetsDeviceID() async throws {
-    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, auditLog, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
 
@@ -505,7 +511,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func identifyUnknownDeviceIsIgnored() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     // Deliberately NOT registering in keychain
 
@@ -525,7 +531,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func identifyWithoutECDHIsIgnored() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
 
@@ -544,7 +550,7 @@ enum TestSetupError: Error { case ecdhFailed }
 // MARK: - Authentication — Happy Path
 
 @Test func authFailsWithNoConnectedDevices() async throws {
-    let (coordinator, _, _, _) = makeTestCoordinator()
+    let (coordinator, _, _, _, _) = makeTestCoordinator()
 
     let result = await coordinator.authenticateFromPAM(user: "arun", service: "sudo", pid: 1, timeout: 1.0)
 
@@ -553,7 +559,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func authFailsWithUnidentifiedDevice() async throws {
-    let (coordinator, bleServer, _, _) = makeTestCoordinator()
+    let (coordinator, bleServer, _, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
 
     // ECDH only — no identify
@@ -568,7 +574,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func authFullFlowSucceeds() async throws {
-    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, auditLog, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
     try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
@@ -599,7 +605,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func authSuccessLogsVerifiedEntry() async throws {
-    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, auditLog, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
     try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
@@ -624,7 +630,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func authMultipleSequentialRequestsSucceed() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
     try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
@@ -652,7 +658,7 @@ enum TestSetupError: Error { case ecdhFailed }
 // MARK: - Authentication — Error Paths
 
 @Test func authTimeoutReturnsTimeoutReason() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
     try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
@@ -667,7 +673,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func authInvalidSignatureReturnsFailure() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
     try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
@@ -687,7 +693,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func authKeyInvalidatedReturnsFastFail() async throws {
-    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, auditLog, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
     try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
@@ -715,7 +721,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func authDisconnectDuringPendingAuthTimesOut() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
     try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
@@ -734,7 +740,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func noDeviceLogsFailedNoDeviceEntry() async throws {
-    let (coordinator, _, _, auditLog) = makeTestCoordinator()
+    let (coordinator, _, _, auditLog, _) = makeTestCoordinator()
 
     let result = await coordinator.authenticateFromPAM(
         user: "arun", service: "sudo", pid: 1, timeout: 1.0
@@ -748,7 +754,7 @@ enum TestSetupError: Error { case ecdhFailed }
 // MARK: - Multi-Device Tests
 
 @Test func authBroadcastsToAllIdentifiedDevices() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let c1 = CompanionSimulator()
     let c2 = CompanionSimulator()
     try register(c1, in: keychain)
@@ -777,7 +783,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func authFirstResponseWins() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let c1 = CompanionSimulator()
     let c2 = CompanionSimulator()
     try register(c1, in: keychain)
@@ -809,7 +815,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func authOnlyIdentifiedDevicesAreChallenged() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let identified = CompanionSimulator()
     let unidentified = CompanionSimulator()
     try register(identified, in: keychain)
@@ -847,7 +853,7 @@ enum TestSetupError: Error { case ecdhFailed }
 // MARK: - Edge Cases
 
 @Test func authLateResponseAfterTimeoutIsNoOp() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
     try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
@@ -870,7 +876,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func authBLESendFailureResultsInImmediateFailure() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
     try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
@@ -888,7 +894,7 @@ enum TestSetupError: Error { case ecdhFailed }
 }
 
 @Test func authResponseWithWrongDeviceIDIsIgnored() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
     try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
@@ -1083,7 +1089,7 @@ private func lastPairResponse(_ bleServer: MockBLEServer) throws -> TBPairRespon
 // MARK: - Identify-on-Reconnect
 
 @Test func reconnectAndReidentifyRestoresAuth() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
 
@@ -1186,7 +1192,7 @@ private func lastPairResponse(_ bleServer: MockBLEServer) throws -> TBPairRespon
 // MARK: - Identify Signature Tests
 
 @Test func identifyWithValidSignatureSucceeds() async throws {
-    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, auditLog, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
 
@@ -1199,7 +1205,7 @@ private func lastPairResponse(_ bleServer: MockBLEServer) throws -> TBPairRespon
 }
 
 @Test func identifyWithMissingSignatureIsRejected() async throws {
-    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, auditLog, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
 
@@ -1225,7 +1231,7 @@ private func lastPairResponse(_ bleServer: MockBLEServer) throws -> TBPairRespon
 }
 
 @Test func identifyWithTamperedSignatureIsRejected() async throws {
-    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, auditLog, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
 
@@ -1255,7 +1261,7 @@ private func lastPairResponse(_ bleServer: MockBLEServer) throws -> TBPairRespon
     // Simulates a MITM who intercepts ECDH: the companion signs with the
     // MITM's ephemeral key, but the daemon verifies against its own.
     // The signature is valid ECDSA but won't match — daemon must reject.
-    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, auditLog, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     try register(companion, in: keychain)
 
@@ -1283,7 +1289,7 @@ private func lastPairResponse(_ bleServer: MockBLEServer) throws -> TBPairRespon
 // MARK: - Device Type & Capabilities Tests
 
 @Test func pairRequestStoresDeviceTypeAndCaps() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
 
     // Generate pairing QR
     let qrData = try await coordinator.pairingManager.generatePairingQRData()
@@ -1320,7 +1326,7 @@ private func lastPairResponse(_ bleServer: MockBLEServer) throws -> TBPairRespon
 }
 
 @Test func identifyRefreshesDeviceTypeOnSession() async throws {
-    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
     let companion = CompanionSimulator()
     // Register as PHONE
     try register(companion, in: keychain, deviceType: .phone)
@@ -1336,7 +1342,7 @@ private func lastPairResponse(_ bleServer: MockBLEServer) throws -> TBPairRespon
 }
 
 @Test func watchWithoutSepIsRejectedFromDirectChallengeResponse() async throws {
-    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, auditLog, _) = makeTestCoordinator()
     let companion = CompanionSimulator(deviceName: "Apple Watch")
 
     // Register as WATCH without secure enclave
@@ -1373,7 +1379,7 @@ private func lastPairResponse(_ bleServer: MockBLEServer) throws -> TBPairRespon
 }
 
 @Test func watchWithSepCanRespondDirectly() async throws {
-    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let (coordinator, bleServer, keychain, auditLog, _) = makeTestCoordinator()
     let companion = CompanionSimulator(deviceName: "Apple Watch Ultra")
 
     // Register as WATCH WITH secure enclave (e.g. Apple Watch Ultra has SEP)
@@ -1406,4 +1412,127 @@ private func lastPairResponse(_ bleServer: MockBLEServer) throws -> TBPairRespon
     // No delegation violation in audit log
     let entries = try await auditLog.readEntries()
     #expect(!entries.contains { $0.result == "FAILED_WATCH_DELEGATION_VIOLATION" })
+}
+
+// MARK: - Selection Policy Tests
+
+@Test func disabledDeviceIsExcludedFromAuth() async throws {
+    let (coordinator, bleServer, keychain, _, runtimeStore) = makeTestCoordinator()
+    let companion = CompanionSimulator()
+    try register(companion, in: keychain)
+
+    // Disable the device in the runtime store
+    runtimeStore.setEnabled(companion.deviceID, enabled: false)
+
+    try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
+
+    // Auth should fail — the only device is disabled
+    let result = await coordinator.authenticateFromPAM(user: "u", service: "sudo", pid: 1, timeout: 1.0)
+    #expect(result.success == false)
+    #expect(result.reason == "no_companion_connected")
+}
+
+@Test func reEnabledDeviceCanAuthenticate() async throws {
+    let (coordinator, bleServer, keychain, _, runtimeStore) = makeTestCoordinator()
+    let companion = CompanionSimulator()
+    try register(companion, in: keychain)
+
+    try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
+
+    // Disable, then re-enable
+    runtimeStore.setEnabled(companion.deviceID, enabled: false)
+    runtimeStore.setEnabled(companion.deviceID, enabled: true)
+
+    // Auth should work now — issue challenge and respond
+    async let authResult = coordinator.authenticateFromPAM(user: "u", service: "sudo", pid: 1, timeout: 3.0)
+    try await Task.sleep(nanoseconds: 150_000_000)
+
+    guard let challenge = bleServer.sentChallenges.last else {
+        Issue.record("No challenge was sent")
+        return
+    }
+    let response = try companion.respondToChallenge(challenge.data)
+    bleServer.simulateResponse(response, from: companion.centralID)
+
+    let result = await authResult
+    #expect(result.success == true)
+}
+
+@Test func anyOneOfBroadcastsToAllEnabledDevices() async throws {
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
+
+    // Connect two companions
+    let companion1 = CompanionSimulator(deviceName: "iPhone")
+    let companion2 = CompanionSimulator(deviceName: "Watch")
+    try register(companion1, in: keychain)
+    try register(companion2, in: keychain)
+
+    try await fullyConnect(companion: companion1, to: coordinator, via: bleServer)
+    try await fullyConnect(companion: companion2, to: coordinator, via: bleServer)
+
+    // Both should receive challenges (anyOneOf = broadcast)
+    async let authResult = coordinator.authenticateFromPAM(user: "u", service: "sudo", pid: 1, timeout: 3.0)
+    try await Task.sleep(nanoseconds: 150_000_000)
+
+    // At least 2 challenges should have been sent
+    #expect(bleServer.sentChallenges.count >= 2)
+
+    // Find the challenge for companion1 and respond to it
+    let challenge1 = bleServer.sentChallenges.first { $0.centralID == companion1.centralID }
+    guard let challenge = challenge1 else {
+        Issue.record("No challenge for companion1")
+        return
+    }
+    let response = try companion1.respondToChallenge(challenge.data)
+    bleServer.simulateResponse(response, from: companion1.centralID)
+
+    let result = await authResult
+    #expect(result.success == true)
+}
+
+@Test func getDaemonStatusExposesDeviceTypeAndLinkQuality() async throws {
+    let (coordinator, bleServer, keychain, _, _) = makeTestCoordinator()
+    let companion = CompanionSimulator(deviceName: "Test iPhone")
+    try register(companion, in: keychain, deviceType: .phone)
+
+    try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
+
+    let status = await coordinator.getDaemonStatus()
+    #expect(status.pairedDevices.count == 1)
+
+    let device = status.pairedDevices.first!
+    #expect(device.deviceType == "phone")
+    #expect(device.enabled == true)
+    // linkQuality may be "unknown" if no RSSI data in mock, but the field should exist
+    #expect(["good", "fair", "poor", "unknown"].contains(device.linkQuality))
+}
+
+@Test func setDeviceEnabledViaControlHandler() async throws {
+    let (coordinator, _, keychain, _, runtimeStore) = makeTestCoordinator()
+    let companion = CompanionSimulator()
+    try register(companion, in: keychain)
+
+    // Disable via control handler
+    await coordinator.setDeviceEnabled(deviceID: companion.deviceID, enabled: false)
+    #expect(runtimeStore.isEnabled(companion.deviceID) == false)
+
+    // Re-enable
+    await coordinator.setDeviceEnabled(deviceID: companion.deviceID, enabled: true)
+    #expect(runtimeStore.isEnabled(companion.deviceID) == true)
+}
+
+@Test func unpairRemovesRuntimeState() async throws {
+    let (coordinator, _, keychain, _, runtimeStore) = makeTestCoordinator()
+    let companion = CompanionSimulator()
+    try register(companion, in: keychain)
+
+    // Set some runtime state
+    runtimeStore.setEnabled(companion.deviceID, enabled: false)
+    runtimeStore.setPriority(companion.deviceID, priority: 5)
+    #expect(runtimeStore.isEnabled(companion.deviceID) == false)
+
+    // Unpair should remove runtime state
+    try await coordinator.unpairDevice(deviceID: companion.deviceID)
+    #expect(runtimeStore.isEnabled(companion.deviceID) == true) // defaults to true after removal
+    #expect(runtimeStore.get(companion.deviceID).priority == 0)
 }

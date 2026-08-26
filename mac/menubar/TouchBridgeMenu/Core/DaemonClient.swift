@@ -33,6 +33,9 @@ final class DaemonClient {
             let displayName: String
             let pairedAt: Date
             let isConnected: Bool
+            let deviceType: String
+            let enabled: Bool
+            let linkQuality: String
             var id: String { deviceID }
         }
 
@@ -83,6 +86,20 @@ final class DaemonClient {
     /// Unpair a device by ID.
     func unpairDevice(deviceID: String) async throws {
         let response = try await sendRequest(["action": "unpair", "deviceID": deviceID])
+        guard response.result == "success" else {
+            throw DaemonError.daemonError(response.reason ?? "unknown")
+        }
+    }
+
+    func setDeviceEnabled(deviceID: String, enabled: Bool) async throws {
+        let response = try await sendRequest(["action": "setDeviceEnabled", "deviceID": deviceID, "enabled": enabled] as [String: Any])
+        guard response.result == "success" else {
+            throw DaemonError.daemonError(response.reason ?? "unknown")
+        }
+    }
+
+    func setDevicePriority(deviceID: String, priority: Int) async throws {
+        let response = try await sendRequest(["action": "setDevicePriority", "deviceID": deviceID, "priority": priority] as [String: Any])
         guard response.result == "success" else {
             throw DaemonError.daemonError(response.reason ?? "unknown")
         }

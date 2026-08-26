@@ -135,6 +135,24 @@ struct MenuBarView: View {
         .padding(.vertical, 8)
     }
 
+    private func linkQualityLabel(_ quality: String) -> String {
+        switch quality {
+        case "good": return "Good"
+        case "fair": return "Fair"
+        case "poor": return "Poor"
+        default: return ""
+        }
+    }
+
+    private func linkQualityColor(_ quality: String) -> Color {
+        switch quality {
+        case "good": return .green
+        case "fair": return .yellow
+        case "poor": return .orange
+        default: return .secondary
+        }
+    }
+
     private func pairedDevicesSection(_ devices: [DaemonClient.DaemonStatus.PairedDeviceInfo]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Paired Devices (\(devices.count))")
@@ -152,11 +170,38 @@ struct MenuBarView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(device.displayName)
                             .font(.subheadline)
-                        Text(device.isConnected ? "Connected" : "Disconnected")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 6) {
+                            Text(device.isConnected ? "Connected" : "Disconnected")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            if device.isConnected {
+                                Text("•")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text(linkQualityLabel(device.linkQuality))
+                                    .font(.caption2)
+                                    .foregroundStyle(linkQualityColor(device.linkQuality))
+                            }
+                            if device.deviceType != "unspecified" {
+                                Text("•")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text(device.deviceType.capitalized)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                     Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { device.enabled },
+                        set: { newVal in
+                            state.setDeviceEnabled(deviceID: device.deviceID, enabled: newVal)
+                        }
+                    ))
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
                     Button {
                         state.unpairDevice(deviceID: device.deviceID)
                     } label: {

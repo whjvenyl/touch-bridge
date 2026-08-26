@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import TouchBridgeProtocol
 
 /// Authentication mode for a given surface.
 public enum AuthMode: String, Codable, Sendable {
@@ -18,6 +19,35 @@ public struct SurfacePolicy: Codable, Sendable {
     public init(mode: AuthMode, sessionTTLSeconds: TimeInterval = 0) {
         self.mode = mode
         self.sessionTTLSeconds = sessionTTLSeconds
+    }
+}
+
+/// Device selection mode for fan-out during `authenticateFromPAM`.
+///
+/// - `anyOneOf`: Broadcast to all identified, enabled devices. First response wins.
+///   This is the default and preserves the original broadcast behavior.
+/// - `priorityOrder`: Try devices in priority order (lowest priority value first).
+///   Each device gets `globalTimeout / N` seconds. If it times out, move to the next.
+///   Only meaningful for user-created ordered groups.
+public enum SelectionMode: String, Codable, Sendable {
+    case anyOneOf = "any_one_of"
+    case priorityOrder = "priority_order"
+}
+
+/// Device selection policy — determines which devices receive challenges
+/// and in what order.
+///
+/// Default: `anyOneOf` with group `"all"` (broadcast to all enabled devices).
+/// Users can create ordered groups via `policy.plist` to enable `priorityOrder`.
+public struct SelectionPolicy: Codable, Sendable, Equatable {
+    public let mode: SelectionMode
+    /// Group name — only devices in this group are challenged.
+    /// `"all"` means every enabled paired device.
+    public let group: String
+
+    public init(mode: SelectionMode = .anyOneOf, group: String = "all") {
+        self.mode = mode
+        self.group = group
     }
 }
 
@@ -141,6 +171,45 @@ public final class PolicyEngine: Sendable {
             return -75
         }
         return threshold
+    }
+
+    /// Device selection policy — determines fan-out behavior.
+    ///
+    /// Reads from `policy.plist`:
+    /// ```
+    /// DeviceSelection = {
+    ///     mode = "any_one_of" | "priority_order";
+    ///     group = "all" | "custom-group-name";
+    /// };
+    /// ```
+    /// Defaults to `anyOneOf` with group `"all"` (broadcast to all enabled devices).
+    public func selectionPolicy() -> SelectionPolicy {
+        if let dict = NSDictionary(contentsOfFile: plistPath),
+           let selection = dict["DeviceSelection"] as? [String: Any] {
+            let modeStr = selection["mode"] as? String ?? "any_one_of"
+            let group = selection["group"] as? String ?? "all"
+            let mode = SelectionMode(rawValue: modeStr) ?? .anyOneOf
+            return SelectionPolicy(mode: mode, group: group)
+        }
+        return SelectionPolicy(mode: .anyOneOf, group: "all")
+    }
+
+    /// Per-device timeout budget for `priorityOrder` mode.
+    ///
+    /// In `priorityOrder`, each device gets `globalTimeout / N` seconds,
+    /// where N is the number of devices in the group. This prevents a single
+    /// slow device from consuming the entire auth timeout.
+    ///
+    /// The global auth timeout is `authTimeout()` (default 15s).
+    /// The per-device challenge timeout is `challengeExpirySeconds` (default 10s).
+    /// For `priorityOrder`, the per-device budget is `min(globalTimeout / N, challengeExpiry)`.
+    public func perDeviceTimeout(deviceCount: Int) -> TimeInterval {
+        guard deviceCount > 0 else { return authTimeout() }
+        let global = authTimeout()
+        let perDevice = global / Double(deviceCount)
+        // Cap at challenge expiry — no point giving a device more time than
+        // the challenge nonce is valid for.
+        return min(perDevice, TouchBridgeConstants.challengeExpirySeconds)
     }
 
     /// List all configured surface policies (defaults + overrides).

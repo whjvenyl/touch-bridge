@@ -19,6 +19,7 @@ public final class DaemonCoordinator: NSObject, PAMAuthHandler, @unchecked Senda
     public let keychainStore: KeychainStore
     public let auditLog: AuditLog
     public let policyEngine: PolicyEngine
+    public let runtimeStore: DeviceRuntimeStore
 
     /// Guards `sessions` and `pendingAuthentications` — both are mutated from
     /// CoreBluetooth delegate callbacks, detached Tasks, and PAM auth calls,
@@ -58,6 +59,7 @@ public final class DaemonCoordinator: NSObject, PAMAuthHandler, @unchecked Senda
         keychainStore: KeychainStore = KeychainStore(),
         auditLog: AuditLog = AuditLog(),
         policyEngine: PolicyEngine = PolicyEngine(),
+        runtimeStore: DeviceRuntimeStore = DeviceRuntimeStore(),
         challengeManager: ChallengeManager = ChallengeManager(),
         pairingManager: PairingManager? = nil,
         rssiThreshold: Int = TouchBridgeConstants.defaultRSSIThreshold,
@@ -67,6 +69,7 @@ public final class DaemonCoordinator: NSObject, PAMAuthHandler, @unchecked Senda
         self.keychainStore = keychainStore
         self.auditLog = auditLog
         self.policyEngine = policyEngine
+        self.runtimeStore = runtimeStore
         self.challengeManager = challengeManager
         self.bleServer = bleServer ?? BLEServer(rssiThreshold: rssiThreshold, serviceUUID: serviceUUID)
 
@@ -190,8 +193,31 @@ public final class DaemonCoordinator: NSObject, PAMAuthHandler, @unchecked Senda
 
         // Only challenge sessions that have completed ECDH AND identified as a known paired device.
         // Unknown/anonymous centrals (e.g. stranger's phone that happens to be nearby) are excluded.
-        let targets = stateLock.withLock {
-            sessions.filter { $0.value.sessionCrypto != nil && $0.value.deviceID != nil }.map(\.key)
+        // Filter through DeviceRuntimeStore: disabled devices are excluded from auth.
+        let selection = policyEngine.selectionPolicy()
+        let targets: [UUID]
+        if selection.mode == .priorityOrder {
+            // priorityOrder: sort by runtime priority (lower = first), then by lastSeen (more recent = first)
+            targets = stateLock.withLock { () -> [UUID] in
+                sessions.compactMap { (centralID, state) -> (UUID, Int, Date)? in
+                    guard state.sessionCrypto != nil, let deviceID = state.deviceID else { return nil }
+                    guard self.runtimeStore.isEnabled(deviceID) else { return nil }
+                    let rs = self.runtimeStore.get(deviceID)
+                    return (centralID, rs.priority, rs.lastSeen ?? .distantPast)
+                }.sorted { a, b in
+                    if a.1 != b.1 { return a.1 < b.1 }
+                    return a.2 > b.2
+                }.map { $0.0 }
+            }
+        } else {
+            // anyOneOf (default): broadcast to all identified, enabled devices
+            targets = stateLock.withLock { () -> [UUID] in
+                sessions.compactMap { (centralID, state) -> UUID? in
+                    guard state.sessionCrypto != nil, let deviceID = state.deviceID else { return nil }
+                    guard self.runtimeStore.isEnabled(deviceID) else { return nil }
+                    return centralID
+                }
+            }
         }
 
         guard !targets.isEmpty else {
@@ -206,7 +232,7 @@ public final class DaemonCoordinator: NSObject, PAMAuthHandler, @unchecked Senda
             return (false, "no_companion_connected")
         }
 
-        logger.info("PAM auth: broadcasting challenge to \(targets.count) device(s)")
+        logger.info("PAM auth: mode=\(selection.mode.rawValue) group=\(selection.group) targets=\(targets.count)")
 
         // Race: first device response OR global timeout — whichever fires first wins.
         //
@@ -225,28 +251,58 @@ public final class DaemonCoordinator: NSObject, PAMAuthHandler, @unchecked Senda
         let result: ChallengeResult? = await withCheckedContinuation { outer in
             let wrapped = OnceContinuation(outer)
 
-            // Challenge-dispatch task: issue to all identified devices, then just wait.
-            Task {
-                var issued = 0
-                for centralID in targets {
-                    if let challengeID = await self.issueChallenge(to: centralID, reason: service) {
-                        self.stateLock.withLock {
-                            self.pendingAuthentications[challengeID] = wrapped
-                        }
-                        issuedIDs.mutate { $0.append(challengeID) }
-                        issued += 1
-                    }
-                }
-                if issued == 0 {
-                    wrapped.resume(returning: .unknownChallenge)
-                }
-                // Otherwise: wait — the first device response (or timeout below) resumes outer.
-            }
+            if selection.mode == .priorityOrder {
+                // Sequential dispatch: try each device in priority order.
+                // Each device gets perDeviceTimeout seconds. If it times out,
+                // move to the next. The global timeout is the outer deadline.
+                let perDevice = policyEngine.perDeviceTimeout(deviceCount: targets.count)
+                logger.info("PAM auth: priorityOrder — per-device budget=\(perDevice)s")
 
-            // Timeout task: resumes with nil after the deadline.
-            Task {
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                wrapped.resume(returning: nil)
+                Task {
+                    for centralID in targets {
+                        guard !wrapped.isResolved else { return }
+                        if let challengeID = await self.issueChallenge(to: centralID, reason: service) {
+                            self.stateLock.withLock {
+                                self.pendingAuthentications[challengeID] = wrapped
+                            }
+                            issuedIDs.mutate { $0.append(challengeID) }
+                            // Wait for this device's budget before trying the next.
+                            try? await Task.sleep(nanoseconds: UInt64(perDevice * 1_000_000_000))
+                        }
+                    }
+                    // All devices exhausted — resume with nil if nobody responded.
+                    wrapped.resume(returning: nil)
+                }
+
+                // Global timeout as safety net.
+                Task {
+                    try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                    wrapped.resume(returning: nil)
+                }
+            } else {
+                // anyOneOf: broadcast to all at once, first response wins.
+                Task {
+                    var issued = 0
+                    for centralID in targets {
+                        if let challengeID = await self.issueChallenge(to: centralID, reason: service) {
+                            self.stateLock.withLock {
+                                self.pendingAuthentications[challengeID] = wrapped
+                            }
+                            issuedIDs.mutate { $0.append(challengeID) }
+                            issued += 1
+                        }
+                    }
+                    if issued == 0 {
+                        wrapped.resume(returning: .unknownChallenge)
+                    }
+                    // Otherwise: wait — the first device response (or timeout below) resumes outer.
+                }
+
+                // Timeout task: resumes with nil after the deadline.
+                Task {
+                    try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                    wrapped.resume(returning: nil)
+                }
             }
         }
 
@@ -314,11 +370,19 @@ extension DaemonCoordinator: DaemonControlHandler {
         let connectedDeviceIDs = Set(connected.compactMap { $0.1.deviceID })
 
         let pairedInfo = paired.map { device in
-            DaemonStatus.PairedDeviceInfo(
+            let runtime = runtimeStore.get(device.deviceID)
+            let rssi: Int? = connected.first(where: { $0.1.deviceID == device.deviceID })
+                .flatMap { _ in bleServer.averageRSSI(for: connected.first(where: { $0.1.deviceID == device.deviceID })!.0) }
+            let linkQ = LinkQuality.from(rssi: rssi)
+
+            return DaemonStatus.PairedDeviceInfo(
                 deviceID: device.deviceID,
                 displayName: device.displayName,
                 pairedAt: device.pairedAt,
-                isConnected: connectedDeviceIDs.contains(device.deviceID)
+                isConnected: connectedDeviceIDs.contains(device.deviceID),
+                deviceType: deviceTypeString(device.tbDeviceType),
+                enabled: runtime.enabled,
+                linkQuality: linkQ.rawValue
             )
         }
 
@@ -350,7 +414,30 @@ extension DaemonCoordinator: DaemonControlHandler {
 
     public func unpairDevice(deviceID: String) async throws {
         try keychainStore.removePairedDevice(deviceID: deviceID)
+        runtimeStore.remove(deviceID)
         logger.info("Unpaired device \(deviceID)")
+    }
+
+    public func setDeviceEnabled(deviceID: String, enabled: Bool) async {
+        runtimeStore.setEnabled(deviceID, enabled: enabled)
+        logger.info("Device \(deviceID) \(enabled ? "enabled" : "disabled")")
+    }
+
+    public func setDevicePriority(deviceID: String, priority: Int) async {
+        runtimeStore.setPriority(deviceID, priority: priority)
+        logger.info("Device \(deviceID) priority set to \(priority)")
+    }
+
+    /// Convert TBDeviceType to a display string.
+    private func deviceTypeString(_ type: TBDeviceType) -> String {
+        switch type {
+        case .phone: return "phone"
+        case .watch: return "watch"
+        case .ring: return "ring"
+        case .tablet: return "tablet"
+        case .unspecified: return "unspecified"
+        case .UNRECOGNIZED: return "unknown"
+        }
     }
 }
 
@@ -700,6 +787,11 @@ final class OnceContinuation: @unchecked Sendable {
 
     init(_ continuation: CheckedContinuation<ChallengeResult?, Never>) {
         self.inner = continuation
+    }
+
+    /// True if the continuation has already been resumed.
+    var isResolved: Bool {
+        lock.withLock { inner == nil }
     }
 
     func resume(returning value: ChallengeResult?) {

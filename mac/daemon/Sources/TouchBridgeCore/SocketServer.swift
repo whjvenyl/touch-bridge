@@ -10,13 +10,25 @@ public struct PAMRequest: Codable, Sendable {
     public let service: String?
     public let pid: Int?
     public let deviceID: String?
+    public let enabled: Bool?
+    public let priority: Int?
 
-    public init(action: String, user: String? = nil, service: String? = nil, pid: Int? = nil, deviceID: String? = nil) {
+    public init(
+        action: String,
+        user: String? = nil,
+        service: String? = nil,
+        pid: Int? = nil,
+        deviceID: String? = nil,
+        enabled: Bool? = nil,
+        priority: Int? = nil
+    ) {
         self.action = action
         self.user = user
         self.service = service
         self.pid = pid
         self.deviceID = deviceID
+        self.enabled = enabled
+        self.priority = priority
     }
 }
 
@@ -63,12 +75,26 @@ public struct DaemonStatus: Codable, Sendable {
         public let displayName: String
         public let pairedAt: Date
         public let isConnected: Bool
+        public let deviceType: String       // "phone", "watch", "ring", "tablet", "unspecified"
+        public let enabled: Bool            // Runtime enabled state
+        public let linkQuality: String      // "good", "fair", "poor", "unknown"
 
-        public init(deviceID: String, displayName: String, pairedAt: Date, isConnected: Bool) {
+        public init(
+            deviceID: String,
+            displayName: String,
+            pairedAt: Date,
+            isConnected: Bool,
+            deviceType: String = "unspecified",
+            enabled: Bool = true,
+            linkQuality: String = "unknown"
+        ) {
             self.deviceID = deviceID
             self.displayName = displayName
             self.pairedAt = pairedAt
             self.isConnected = isConnected
+            self.deviceType = deviceType
+            self.enabled = enabled
+            self.linkQuality = linkQuality
         }
     }
 
@@ -90,12 +116,14 @@ public protocol PAMAuthHandler: AnyObject, Sendable {
     func authenticateFromPAM(user: String, service: String, pid: Int, timeout: TimeInterval) async -> (success: Bool, reason: String?)
 }
 
-/// Protocol for control actions (status, pairing, unpair) — enables testing without DaemonCoordinator.
+/// Protocol for control actions (status, pairing, unpair, device enable/disable) — enables testing without DaemonCoordinator.
 public protocol DaemonControlHandler: AnyObject, Sendable {
     func getDaemonStatus() async -> DaemonStatus
     func startPairing() async throws -> Data
     func cancelPairing() async
     func unpairDevice(deviceID: String) async throws
+    func setDeviceEnabled(deviceID: String, enabled: Bool) async
+    func setDevicePriority(deviceID: String, priority: Int) async
 }
 
 /// Unix domain socket server for PAM module communication.
@@ -294,6 +322,10 @@ public final class SocketServer: @unchecked Sendable {
             await handleCancelPairing(fd: fd)
         case "unpair":
             await handleUnpair(fd: fd, request: request)
+        case "setDeviceEnabled":
+            await handleSetDeviceEnabled(fd: fd, request: request)
+        case "setDevicePriority":
+            await handleSetDevicePriority(fd: fd, request: request)
         default:
             sendResponse(fd: fd, response: .failure("unknown_action"))
         }
@@ -370,6 +402,34 @@ public final class SocketServer: @unchecked Sendable {
             logger.error("Unpair failed: \(error.localizedDescription)")
             sendResponse(fd: fd, response: .failure("unpair_failed"))
         }
+    }
+
+    private func handleSetDeviceEnabled(fd: Int32, request: PAMRequest) async {
+        guard let controlHandler else {
+            sendResponse(fd: fd, response: .failure("control_not_supported"))
+            return
+        }
+        guard let deviceID = request.deviceID else {
+            sendResponse(fd: fd, response: .failure("missing_device_id"))
+            return
+        }
+        let enabled = request.enabled ?? true
+        await controlHandler.setDeviceEnabled(deviceID: deviceID, enabled: enabled)
+        sendResponse(fd: fd, response: .success)
+    }
+
+    private func handleSetDevicePriority(fd: Int32, request: PAMRequest) async {
+        guard let controlHandler else {
+            sendResponse(fd: fd, response: .failure("control_not_supported"))
+            return
+        }
+        guard let deviceID = request.deviceID else {
+            sendResponse(fd: fd, response: .failure("missing_device_id"))
+            return
+        }
+        let priority = request.priority ?? 0
+        await controlHandler.setDevicePriority(deviceID: deviceID, priority: priority)
+        sendResponse(fd: fd, response: .success)
     }
 
     private func sendResponse(fd: Int32, response: PAMResponse) {

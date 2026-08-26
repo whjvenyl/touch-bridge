@@ -341,6 +341,13 @@ class MenuBarState: ObservableObject {
         }
     }
 
+    func setDeviceEnabled(deviceID: String, enabled: Bool) {
+        Task {
+            try? await client.setDeviceEnabled(deviceID: deviceID, enabled: enabled)
+            await refreshStatus()
+        }
+    }
+
     // MARK: - Audit Log
 
     func loadRecentEvents() {
