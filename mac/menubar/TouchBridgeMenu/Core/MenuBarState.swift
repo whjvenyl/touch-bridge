@@ -33,6 +33,10 @@ class MenuBarState: ObservableObject {
     @Published var recentEvents: [AuthEvent] = []
     @Published var authCount: Int = 0
 
+    // True when an authentication request is pending on a companion device.
+    // Drives the menu bar badge/indicator.
+    @Published var isAuthPending: Bool = false
+
     struct AuthEvent: Identifiable, Codable {
         let id = UUID()
         let ts: String
