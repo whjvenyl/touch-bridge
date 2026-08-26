@@ -260,7 +260,7 @@ class BLEClient(private val context: Context) {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             val address = gatt.device.address
             Log.i(TAG, "onConnectionStateChange: device=$address, status=$status, newState=$newState")
-            
+
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 Log.e(TAG, "GATT error for $address: $status")
                 disconnect()
@@ -271,10 +271,13 @@ class BLEClient(private val context: Context) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     Log.i(TAG, "Connected to Mac: $address")
-                    gatt.discoverServices()
-                    // Don't notify listener yet — wait for onServicesDiscovered
-                    // so that characteristics are available when the listener
-                    // tries to use them (e.g. sendSessionKey for ECDH).
+                    // Request a larger MTU before service discovery.
+                    // The default BLE ATT MTU is 23 (20 bytes payload), which
+                    // truncates the 65-byte P-256 public key sent during ECDH.
+                    // Request 512 to accommodate all protocol messages.
+                    gatt.requestMtu(512)
+                    // Service discovery is deferred to onMtuChanged so that
+                    // the larger MTU is in effect before any data exchange.
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     Log.i(TAG, "Disconnected from Mac: $address")
@@ -282,6 +285,14 @@ class BLEClient(private val context: Context) {
                     listener?.onConnectionChanged(false, address)
                 }
             }
+        }
+
+        override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+            Log.i(TAG, "onMtuChanged: mtu=$mtu, status=$status")
+            // MTU negotiation complete — now discover services.
+            // If MTU request failed, proceed anyway with default MTU
+            // (service discovery still works, but large payloads may truncate).
+            gatt.discoverServices()
         }
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
