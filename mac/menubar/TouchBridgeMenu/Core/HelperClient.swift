@@ -38,15 +38,19 @@ class HelperClient: ObservableObject {
     /// Register the helper daemon via SMAppService.
     /// The user will see a system notification asking them to approve
     /// the background item in System Settings.
-    func registerHelper() async -> Bool {
+    ///
+    /// Returns `(success, errorMessage)`. SMAppService.daemon requires the app
+    /// and helper to share a Team ID — ad-hoc signed builds will fail here.
+    func registerHelper() async -> (success: Bool, error: String?) {
         let service = SMAppService.daemon(plistName: Self.helperPlistName)
         do {
             try await service.register()
             isHelperRegistered = true
-            return true
+            return (true, nil)
         } catch {
-            print("Failed to register helper: \(error)")
-            return false
+            let msg = "SMAppService registration failed: \(error.localizedDescription)"
+            print(msg)
+            return (false, msg)
         }
     }
 

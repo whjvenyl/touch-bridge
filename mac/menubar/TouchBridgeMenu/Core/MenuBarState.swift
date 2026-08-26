@@ -122,25 +122,47 @@ class MenuBarState: ObservableObject {
 
     // MARK: - Install / Uninstall via privileged helper
 
-    /// Install TouchBridge system components using the privileged helper.
+    /// Install TouchBridge system components.
+    ///
+    /// Tries the privileged helper (SMAppService.daemon) first — this is the
+    /// preferred path for properly signed (Developer ID) builds. If the helper
+    /// cannot be registered (e.g. ad-hoc signed builds with no Team ID), falls
+    /// back to `AdminInstaller` which uses an admin-privileged osascript dialog.
     func installSystem(patchSudo: Bool = true, patchScreensaver: Bool = false, ignoreSSH: Bool = false) async {
         isInstalling = true
         installMessage = nil
-
-        if !helperClient.isHelperRegistered {
-            let registered = await helperClient.registerHelper()
-            if !registered {
-                installMessage = "Could not register the privileged helper. Check System Settings → General → Login Items to approve TouchBridge."
-                isInstalling = false
-                return
-            }
-        }
 
         guard let daemonPath = BinaryLocator.bundledDaemonPath,
               let pamPath = BinaryLocator.bundledPAMPath else {
             installMessage = "Bundled binaries not found."
             isInstalling = false
             return
+        }
+
+        // Try the privileged helper first (preferred for Developer ID signed builds)
+        if !helperClient.isHelperRegistered {
+            let (registered, regError) = await helperClient.registerHelper()
+            if !registered {
+                // Fall back to admin-privileged osascript (works with ad-hoc signing)
+                print("Helper registration failed, falling back to admin installer: \(regError ?? "unknown")")
+                let (success, message) = await AdminInstaller.install(
+                    daemonPath: daemonPath,
+                    pamModulePath: pamPath,
+                    patchSudo: patchSudo,
+                    patchScreensaver: patchScreensaver,
+                    ignoreSSH: ignoreSSH
+                )
+                if success {
+                    checkInstallation()
+                    installLaunchAgentPlist()
+                    startDaemon()
+                    installMessage = "Installation complete."
+                } else {
+                    installMessage = "Installation failed: \(message)"
+                }
+                isInstalling = false
+                return
+            }
         }
 
         let (success, message) = await helperClient.install(
@@ -162,7 +184,10 @@ class MenuBarState: ObservableObject {
         isInstalling = false
     }
 
-    /// Uninstall TouchBridge system components using the privileged helper.
+    /// Uninstall TouchBridge system components.
+    ///
+    /// Uses the privileged helper if registered, otherwise falls back to
+    /// `AdminInstaller` (admin-privileged osascript dialog).
     func uninstallSystem() async {
         isInstalling = true
         installMessage = nil
@@ -171,11 +196,18 @@ class MenuBarState: ObservableObject {
         try? FileManager.default.removeItem(atPath: launchAgentPlist)
         isAutoLaunchEnabled = false
 
-        let (success, message) = await helperClient.uninstall(removeBinary: true)
+        let (success, message): (Bool, String)
+        if helperClient.isHelperRegistered {
+            (success, message) = await helperClient.uninstall(removeBinary: true)
+        } else {
+            (success, message) = await AdminInstaller.uninstall(removeBinary: true)
+        }
 
         if success {
             checkInstallation()
-            await helperClient.unregisterHelper()
+            if helperClient.isHelperRegistered {
+                await helperClient.unregisterHelper()
+            }
             installMessage = "Uninstallation complete."
         } else {
             installMessage = "Uninstallation failed: \(message)"
@@ -183,18 +215,19 @@ class MenuBarState: ObservableObject {
         isInstalling = false
     }
 
-    /// Toggle a PAM surface (sudo or screensaver) via the privileged helper.
+    /// Toggle a PAM surface (sudo or screensaver).
+    ///
+    /// Uses the privileged helper if registered, otherwise falls back to
+    /// `AdminInstaller` (admin-privileged osascript dialog).
     func togglePAMSurface(_ surface: String, enabled: Bool) async {
         isInstalling = true
         installMessage = nil
 
-        if !helperClient.isHelperRegistered {
-            let registered = await helperClient.registerHelper()
-            if !registered {
-                installMessage = "Could not register the privileged helper."
-                isInstalling = false
-                return
-            }
+        // Determine whether to use the privileged helper or the admin fallback
+        var useHelper = helperClient.isHelperRegistered
+        if !useHelper {
+            let (registered, _) = await helperClient.registerHelper()
+            useHelper = registered
         }
 
         if enabled {
@@ -203,35 +236,61 @@ class MenuBarState: ObservableObject {
                 isInstalling = false
                 return
             }
-            // Ensure PAM module is installed first
-            let (ok, msg) = await helperClient.install(
-                daemonPath: BinaryLocator.bundledDaemonPath ?? "",
-                pamModulePath: pamPath,
-                patchSudo: surface == "sudo",
-                patchScreensaver: surface == "screensaver",
-                ignoreSSH: false
-            )
+            let daemonPath = BinaryLocator.bundledDaemonPath ?? ""
+            let (ok, msg): (Bool, String)
+            if useHelper {
+                (ok, msg) = await helperClient.install(
+                    daemonPath: daemonPath,
+                    pamModulePath: pamPath,
+                    patchSudo: surface == "sudo",
+                    patchScreensaver: surface == "screensaver",
+                    ignoreSSH: false
+                )
+            } else {
+                (ok, msg) = await AdminInstaller.install(
+                    daemonPath: daemonPath,
+                    pamModulePath: pamPath,
+                    patchSudo: surface == "sudo",
+                    patchScreensaver: surface == "screensaver",
+                    ignoreSSH: false
+                )
+            }
             if !ok {
                 installMessage = "Failed: \(msg)"
             }
         } else {
-            // Uninstall just this surface — re-run with the opposite config
-            // The helper's uninstall removes everything, so we reinstall with
-            // the desired surfaces. This is simpler than per-surface removal.
-            let (ok, _) = await helperClient.uninstall(removeBinary: false)
+            // Uninstall just this surface — re-run with the opposite config.
+            // The uninstall removes everything, so we reinstall with the
+            // desired surfaces. This is simpler than per-surface removal.
+            let (ok, _): (Bool, String)
+            if useHelper {
+                (ok, _) = await helperClient.uninstall(removeBinary: false)
+            } else {
+                (ok, _) = await AdminInstaller.uninstall(removeBinary: false)
+            }
             if ok {
                 // Re-patch only the surfaces that should remain
                 let wantSudo = surface == "sudo" ? false : sudoEnabled
                 let wantScreensaver = surface == "screensaver" ? false : screensaverEnabled
                 if wantSudo || wantScreensaver {
                     guard let pamPath = BinaryLocator.bundledPAMPath else { return }
-                    _ = await helperClient.install(
-                        daemonPath: "",
-                        pamModulePath: pamPath,
-                        patchSudo: wantSudo,
-                        patchScreensaver: wantScreensaver,
-                        ignoreSSH: false
-                    )
+                    if useHelper {
+                        _ = await helperClient.install(
+                            daemonPath: "",
+                            pamModulePath: pamPath,
+                            patchSudo: wantSudo,
+                            patchScreensaver: wantScreensaver,
+                            ignoreSSH: false
+                        )
+                    } else {
+                        _ = await AdminInstaller.install(
+                            daemonPath: "",
+                            pamModulePath: pamPath,
+                            patchSudo: wantSudo,
+                            patchScreensaver: wantScreensaver,
+                            ignoreSSH: false
+                        )
+                    }
                 }
             }
         }
