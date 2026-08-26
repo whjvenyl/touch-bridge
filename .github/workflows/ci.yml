@@ -1,22 +1,25 @@
 name: CI
 
+# Disabled — automatic triggers removed. Run manually from the Actions tab
+# via "Run workflow", or restore the push/pull_request block below to re-enable.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'protocol/**'
-      - 'mac/**'
-      - 'companion/ios/**'
-      - 'scripts/**'
-      - '.github/workflows/ci.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'protocol/**'
-      - 'mac/**'
-      - 'companion/ios/**'
-      - 'scripts/**'
-      - '.github/workflows/ci.yml'
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'protocol/**'
+  #     - 'mac/**'
+  #     - 'companion/ios/**'
+  #     - 'scripts/**'
+  #     - '.github/workflows/ci.yml'
+  # pull_request:
+  #   branches: [main]
+  #   paths:
+  #     - 'protocol/**'
+  #     - 'mac/**'
+  #     - 'companion/ios/**'
+  #     - 'scripts/**'
+  #     - '.github/workflows/ci.yml'
 
 jobs:
   protocol-tests:
