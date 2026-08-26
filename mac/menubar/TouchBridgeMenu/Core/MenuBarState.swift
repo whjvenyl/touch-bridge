@@ -103,6 +103,11 @@ class MenuBarState: ObservableObject {
         process.arguments = ["bootout", "gui/\(uid)/\(launchAgentLabel)"]
         try? process.run()
         process.waitUntilExit()
+        // Remove stale socket if the daemon didn't clean it up
+        let socketPath = "\(NSHomeDirectory())/Library/Application Support/TouchBridge/daemon.sock"
+        if FileManager.default.fileExists(atPath: socketPath) {
+            try? FileManager.default.removeItem(atPath: socketPath)
+        }
         checkInstallation()
         status = nil
     }

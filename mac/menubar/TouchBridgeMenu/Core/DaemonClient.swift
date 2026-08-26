@@ -15,9 +15,33 @@ final class DaemonClient {
         }
     }
 
-    /// Whether the daemon socket exists (daemon is running).
+    /// Whether the daemon is actually running and accepting connections.
+    /// Checks the socket file exists AND can connect to it — a stale socket
+    /// file left behind after a crash would otherwise report a false positive.
     var isSocketAvailable: Bool {
-        FileManager.default.fileExists(atPath: socketPath)
+        guard FileManager.default.fileExists(atPath: socketPath) else {
+            return false
+        }
+        // Try to connect — if it fails, the socket is stale (daemon not running)
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let pathBytes = socketPath.utf8CString
+        withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
+            ptr.withMemoryRebound(to: CChar.self, capacity: pathBytes.count) { dest in
+                pathBytes.withUnsafeBufferPointer { src in
+                    _ = memcpy(dest, src.baseAddress, min(src.count, 104))
+                }
+            }
+        }
+        let result = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
+                connect(fd, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        return result == 0
     }
 
     // MARK: - Response types
