@@ -84,3 +84,29 @@ After a successful biometric authentication, subsequent requests within the TTL 
 - The TTL expires
 - The companion device disconnects
 - The daemon is restarted
+
+## Configuration Reference
+
+<TypeTable
+  type={{
+    AuthTimeoutSeconds: {
+      type: "number",
+      default: "15",
+      description: "Global auth timeout in seconds. If no response within this window, falls through to password.",
+    },
+    RSSIThreshold: {
+      type: "number",
+      default: "-75",
+      description: "BLE signal strength threshold in dBm. Companion must be closer than this to approve.",
+    },
+    "Surfaces.<name>.mode": {
+      type: '"biometric_required" | "proximity_session"',
+      default: '"biometric_required"',
+      description: "Auth mode for this surface.",
+    },
+    "Surfaces.<name>.sessionTTLSeconds": {
+      type: "number",
+      description: "Session TTL in seconds for proximity_session mode. Invalidated on disconnect or daemon restart.",
+    },
+  }}
+/>

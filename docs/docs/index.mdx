@@ -24,11 +24,15 @@ The approval happens over Bluetooth Low Energy (BLE) with end-to-end encryption.
 
 ## Quick start
 
+<Frame>
+
 ```bash
 git clone https://github.com/HMAKT99/UnTouchID.git
 cd UnTouchID
 sudo bash scripts/install.sh
 ```
+
+</Frame>
 
 Then open the TouchBridge menu bar app and pair your device.
 
@@ -54,6 +58,39 @@ Then open the TouchBridge menu bar app and pair your device.
     MIT licensed. Audit the code yourself.
   </Card>
 </CardGroup>
+
+## Explore
+
+<Columns>
+  <Column>
+
+<Card title="Installation" href="/guides/installation" icon="download">
+  Build from source, pair your device, test sudo.
+</Card>
+
+  </Column>
+  <Column>
+
+<Card title="CLI Reference" href="/cli/touchbridge" icon="terminal">
+  Every `touchbridge` subcommand and flag.
+</Card>
+
+  </Column>
+  <Column>
+
+<Card title="API Reference" href="/reference" icon="code">
+  Socket protocol between PAM, daemon, and menu bar app.
+</Card>
+
+  </Column>
+  <Column>
+
+<Card title="Architecture" href="/architecture/architecture" icon="layout">
+  Component overview, data flow, and security model.
+</Card>
+
+  </Column>
+</Columns>
 
 :::note
 TouchBridge is in alpha. The iOS companion is production-ready. The Android companion has known protocol issues — see the [Architecture Review](/architecture/architecture-review).

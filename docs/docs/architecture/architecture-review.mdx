@@ -33,26 +33,32 @@ TouchBridge is a PAM-replacement system that delegates macOS authentication to a
 
 ## 1. What's Built and Working
 
-### macOS Daemon (`mac/daemon/`)
+<Accordion>
+  <AccordionItem title="macOS Daemon">
+
 - **SocketServer** — Unix domain socket for PAM + control app communication. Supports `authenticate`, `status`, `pair`, `cancelPairing`, `unpair` actions.
-- **DaemonCoordinator** — Central orchestrator wiring BLE, challenge management, pairing, session crypto, audit logging. Implements both `PAMAuthHandler` and `DaemonControlHandler`.
+- **DaemonCoordinator** — Central orchestrator wiring BLE, challenge management, pairing, session crypto, audit logging.
 - **ChallengeManager** — Actor-based nonce issuance, ECDSA verification, replay protection (60s window), expiry (10s).
 - **PairingManager** — QR-based one-time pairing ceremony with 5-minute token expiry.
 - **KeychainStore** — Paired device public key storage in macOS Keychain.
-- **BLEServer** — CoreBluetooth GATT peripheral with 4 characteristics (session key, challenge, response, pairing).
-- **PolicyEngine** — Per-surface auth policy (biometric required vs proximity session) with configurable TTLs.
+- **BLEServer** — CoreBluetooth GATT peripheral with 4 characteristics.
+- **PolicyEngine** — Per-surface auth policy with configurable TTLs.
 - **SimulatorAuthHandler** — Local software-key simulation for testing without a phone.
 - **AuditLog** — NDJSON audit trail in `~/Library/Logs/TouchBridge/`.
 - **112 unit/integration tests** — covering challenge lifecycle, ECDH, pairing, PAM integration, multi-device, replay, timeout, proximity.
 
-### PAM Module (`mac/pam/`)
+  </AccordionItem>
+  <AccordionItem title="PAM Module">
+
 - C universal binary (arm64 + x86_64)
 - Connects to daemon socket, sends JSON auth request, parses response
 - Fail-open to password on any error (daemon down, timeout, denied)
 - `ignore_ssh` policy — checks SSH env vars, falls through to password in SSH sessions
 - User-facing messages via PAM conversation
 
-### iOS Companion (`companion/ios/`)
+  </AccordionItem>
+  <AccordionItem title="iOS Companion">
+
 - **BLEClient** — Full CoreBluetooth central with background restoration
 - **SecureEnclaveManager** — ECDSA P-256 in SE with biometric ACL
 - **ChallengeHandler** — Decrypt, biometric prompt, sign, respond
@@ -61,7 +67,9 @@ TouchBridge is a PAM-replacement system that delegates macOS authentication to a
 - **UI** — Complete: pairing (QR scanner), home, auth request, settings, device list
 - **Watch app** — Approve/deny UI via WatchConnectivity
 
-### Menubar Control App (`mac/menubar/`)
+  </AccordionItem>
+  <AccordionItem title="Menubar Control App">
+
 - Real daemon status polling (paired devices, connections, advertising)
 - Start/stop daemon, autolaunch toggle
 - QR code pairing window
@@ -71,15 +79,20 @@ TouchBridge is a PAM-replacement system that delegates macOS authentication to a
 - Bundles daemon binary + PAM module in app Resources
 - Privileged helper (SMAppService.daemon) for system installation
 
-### Protocol (`protocol/swift/`)
+  </AccordionItem>
+  <AccordionItem title="Protocol">
+
 - Shared `.proto` schema (canonical source of truth)
 - Wire format: `[version:1][type:1][protobuf payload]`
 - 6 message types: pairRequest, pairResponse, challengeIssued, challengeResponse, error, identify
 - ECDH P-256 → HKDF-SHA256 → AES-256-GCM session encryption
 - ECDSA P-256 signing with Secure Enclave / Android Keystore
 - 512-byte max message size
-- Swift: generated via `protocol/generate.sh` (Homebrew protoc + protoc-gen-swift)
+- Swift: generated via `protocol/generate.sh`
 - Android: generated at build time via Gradle protobuf plugin
+
+  </AccordionItem>
+</Accordion>
 
 ---
 
@@ -185,24 +198,28 @@ The iOS companion pairs with a single Mac at a time. Pairing with a second Mac r
 
 ## 6. Recommendations (Prioritized)
 
-### P0 — Fix Android (blocking)
+<Expandable title="P0 — Fix Android (blocking)">
 1. Fix Base64 encoding mismatch in `ChallengeHandler.kt`
 2. Add wire format headers to all outgoing messages
 3. Implement identify message after ECDH
 4. Add pairing token to pair request
 5. Add key invalidation error handling
+</Expandable>
 
-### P1 — Security Hardening
+<Expandable title="P1 — Security Hardening">
 6. Escape username/service in PAM module JSON
 7. Authenticate identify message with device key signature
 8. Fix `connectedCentrals` threading in BLEServer
 9. Fix `@unchecked Sendable` in AuthNotifier and ProximityMonitor
+</Expandable>
 
-### P2 — Architecture
+<Expandable title="P2 — Architecture">
 10. Add companion test coverage
 11. Add Android CI
 12. Document socket protocol and control actions
+</Expandable>
 
-### P3 — Features
+<Expandable title="P3 — Features">
 13. Multi-Mac support on phone side
 14. Developer ID signing + notarization for distribution
+</Expandable>
