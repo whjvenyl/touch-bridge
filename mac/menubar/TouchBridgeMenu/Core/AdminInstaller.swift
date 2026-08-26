@@ -6,10 +6,11 @@ import Foundation
 /// the same signed bundle. Ad-hoc signed builds (CODE_SIGN_IDENTITY="-") have
 /// no Team ID, so `SMAppService.daemon(...).register()` fails.
 ///
-/// This fallback uses `osascript -e 'do shell script "..." with administrator
-/// privileges'`, which shows a native macOS admin-password dialog and runs the
-/// privileged commands as root. It works with ad-hoc signing and provides the
-/// same install/uninstall functionality as the privileged helper.
+/// This fallback uses the Security framework's `AuthorizationCopyRights` API
+/// (via `PrivilegedTask`), which shows a native macOS admin-password dialog
+/// and runs the privileged commands as root. It works with ad-hoc signing
+/// and provides the same install/uninstall functionality as the privileged
+/// helper.
 ///
 /// When the app is properly signed with a Developer ID (for distribution), the
 /// SMAppService path is preferred because it avoids repeated password prompts.
@@ -100,54 +101,10 @@ enum AdminInstaller {
 
     // MARK: - Admin script execution
 
-    /// Run a list of shell commands with administrator privileges via osascript.
-    /// Shows a native macOS admin-password dialog.
+    /// Run a list of shell commands with administrator privileges via the
+    /// Security framework. Shows a native macOS admin-password dialog.
     private static func runAdminScript(_ commands: [String]) async -> (success: Bool, message: String) {
-        guard !commands.isEmpty else {
-            return (true, "Nothing to do")
-        }
-
-        // Join all commands into a single script
-        let script = commands.joined(separator: " ; ")
-
-        // Escape for AppleScript string context
-        let escapedScript = script
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-
-        let appleScript = "do shell script \"\(escapedScript)\" with administrator privileges"
-
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-                process.arguments = ["-e", appleScript]
-
-                let pipe = Pipe()
-                process.standardOutput = pipe
-                process.standardError = pipe
-
-                do {
-                    try process.run()
-                    process.waitUntilExit()
-
-                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                    let output = String(data: data, encoding: .utf8)?
-                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-                    if process.terminationStatus == 0 {
-                        continuation.resume(returning: (true, "Done"))
-                    } else {
-                        let msg = output.isEmpty
-                            ? "Admin script failed (exit \(process.terminationStatus))"
-                            : output
-                        continuation.resume(returning: (false, msg))
-                    }
-                } catch {
-                    continuation.resume(returning: (false, "Failed to run admin script: \(error.localizedDescription)"))
-                }
-            }
-        }
+        return await PrivilegedTask.run(commands)
     }
 
     // MARK: - PAM patching scripts (mirrors pam-common.sh logic)
