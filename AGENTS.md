@@ -6,9 +6,23 @@
 # Required for building macOS/iOS components
 xcode-select --install
 
-# Required for protocol code generation (only when .proto changes)
+# Required for protocol code generation (after cloning or when .proto changes)
 brew install protobuf swift-protobuf
+
+# Required for Xcode project generation
+brew install xcodegen
 ```
+
+## First-time setup
+
+```bash
+# Generate protobuf Swift code (required before any build)
+bash protocol/generate.sh
+```
+
+The generated `touchbridge.pb.swift` is gitignored. It must exist before the
+protocol SPM package can compile. `build-all.sh` runs this automatically, but
+if you open the Xcode project directly you need to run it once after cloning.
 
 ## Build
 
@@ -23,24 +37,23 @@ bash scripts/build-all.sh release
 bash scripts/build-all.sh test
 
 # Individual components:
-cd protocol/swift && swift build    # protocol only
-cd mac/daemon && swift build         # daemon only
-make -C mac/pam                      # PAM module only
-cd mac/menubar && xcodegen generate && xcodebuild -project TouchBridgeMenu.xcodeproj build  # menubar (auto-bundles daemon + PAM module)
+cd protocol/swift && swift build                          # protocol only
+cd mac && xcodegen generate && xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge build       # daemon
+cd mac && xcodegen generate && xcodebuild -project TouchBridge.xcodeproj -scheme TouchBridgeMenu build   # menubar (auto-bundles daemon + PAM)
+make -C mac/pam                                           # PAM module only
 ```
 
 ## Test
 
 ```bash
-# Run all daemon tests
-cd mac/daemon && swift test
+# Protocol tests (fast, SPM)
+cd protocol/swift && swift test
+
+# Daemon tests (Xcode)
+cd mac && xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge test
 
 # Run specific test suite
-cd mac/daemon && swift test --filter ChallengeManager
-cd mac/daemon && swift test --filter Keychain
-cd mac/daemon && swift test --filter SocketServer
-cd mac/daemon && swift test --filter PolicyEngine
-cd mac/daemon && swift test --filter PAMIntegration
+cd mac && xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge test -only-testing:TouchBridgeCoreTests/ChallengeManagerTests
 ```
 
 ## Install / Uninstall
@@ -88,15 +101,19 @@ sudo echo 'TouchBridge works!'
 ## Project Structure
 
 - `protocol/swift/` — shared Swift Package (message types, wire format, constants)
-- `mac/daemon/` — Swift Package, macOS LaunchAgent daemon
-  - `Sources/TouchBridgeCore/` — testable library (ChallengeManager, KeychainStore, BLE, SocketServer, etc.)
-  - `Sources/touchbridge/` — unified CLI (serve, pair, logs, config, list-devices, challenge)
-- `mac/pam/` — PAM module (C, universal binary arm64+x86_64)
-- `mac/menubar/` — SwiftUI menu bar app + privileged helper
-  - `TouchBridgeMenu/` — menu bar app (status, pairing, settings, install/uninstall)
-  - `TouchBridgeHelper/` — privileged helper daemon (SMAppService.daemon, XPC, root)
-  - `project.yml` — xcodegen config (auto-bundles daemon + PAM into app Resources)
-- `mac/authplugin/` — Swift auth plugin (stub)
+  - `Sources/TouchBridgeProtocol/` — hand-written + generated protobuf code
+  - `Generated/` — protoc output (gitignored, run `bash protocol/generate.sh`)
+- `protocol/proto/` — canonical `.proto` schema
+- `protocol/generate.sh` — generates Swift protobuf code (requires brew protobuf + swift-protobuf)
+- `mac/` — unified Xcode project (xcodegen)
+  - `project.yml` — root spec (options, packages, settings, schemes, includes)
+  - `daemon/targets.yml` — daemon targets (TouchBridgeCore, touchbridge, tests)
+  - `menubar/targets.yml` — menubar targets (TouchBridgeMenu, TouchBridgeHelper)
+  - `daemon/Sources/TouchBridgeCore/` — testable library (ChallengeManager, KeychainStore, BLE, SocketServer, etc.)
+  - `daemon/Sources/touchbridge/` — unified CLI (serve, pair, logs, config, list-devices, challenge)
+  - `menubar/TouchBridgeMenu/` — menu bar app (status, pairing, settings, install/uninstall)
+  - `menubar/TouchBridgeHelper/` — privileged helper daemon (SMAppService.daemon, XPC, root)
+  - `pam/` — PAM module (C, universal binary arm64+x86_64)
 - `companion/ios/` — iOS/iPadOS companion app (SwiftUI)
   - `TouchBridge/Core/` — CompanionCoordinator, BLEClient, SecureEnclaveManager, ChallengeHandler
   - `TouchBridge/Views/` — PairingView, AuthRequestView, DeviceListView, SettingsView
