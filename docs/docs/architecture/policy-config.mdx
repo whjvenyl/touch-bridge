@@ -1,6 +1,6 @@
 ---
 title: Policy Configuration
-description: Per-surface auth policy and configuration options
+description: Per-surface auth policy, selection policy, kill-switch, and device runtime config
 sidebar:
   icon: sliders-horizontal
   order: 5
@@ -10,9 +10,23 @@ sidebar:
 
 ## Overview
 
-TouchBridge supports per-action configurable authentication policy. Each auth surface can be configured to require biometric confirmation every time, or to allow proximity sessions (skip biometric if recently authenticated).
+TouchBridge supports per-action configurable authentication policy, device selection policy, a kill-switch for sudo lockout recovery, and per-device runtime state (enabled/disabled, priority).
 
-## Default Policy
+## Kill-Switch
+
+If a policy or daemon regression breaks `sudo`, force password fallback without uninstalling:
+
+```bash
+# Environment variable (takes effect on next daemon restart)
+export TOUCHBRIDGE_FORCE_PASSWORD=1
+
+# Or in policy.plist
+# ForcePasswordFallback = true
+```
+
+When active, `authenticateFromPAM` returns immediately with `forced_fallback` — no BLE challenges dispatched. PAM falls through to the normal password prompt.
+
+## Default Surface Policy
 
 | Surface | Mode | Session TTL |
 |---------|------|-------------|
@@ -22,7 +36,55 @@ TouchBridge supports per-action configurable authentication policy. Each auth su
 | `system_settings` | biometric required | — |
 | `browser_autofill` | proximity session | 10 min |
 
-## Configuration
+## Selection Policy
+
+Determines how the daemon dispatches challenges when multiple devices are connected.
+
+| Mode | Behavior |
+|------|----------|
+| `any_one_of` | Broadcast to all enabled, identified devices. First response wins. (Default) |
+| `priority_order` | Try devices in priority order. Each gets `globalTimeout / N` seconds before moving to the next. |
+
+```xml
+<dict>
+    <key>DeviceSelection</key>
+    <dict>
+        <key>mode</key>
+        <string>priority_order</string>
+        <key>group</key>
+        <string>all</string>
+    </dict>
+</dict>
+```
+
+### Per-Device Timeout Budget
+
+In `priority_order` mode, each device gets `min(globalTimeout / N, challengeExpiry)` seconds:
+- Global timeout: 15s (default, configurable via `AuthTimeoutSeconds`)
+- Challenge expiry: 10s (fixed)
+- Example: 3 devices → 5s each. 1 device → 10s (capped at challenge expiry).
+
+## Device Runtime State
+
+Per-device runtime state is stored in `~/Library/Application Support/TouchBridge/devices.json` (permissions `0o600`), NOT in Keychain. Keychain stores only pairing material (public key, device type, capabilities, paired-at timestamp).
+
+| Field | Description | Updated when |
+|-------|-------------|--------------|
+| `enabled` | Whether the device receives challenges | User toggles in menubar UI |
+| `priority` | Sort order for `priority_order` mode | User configures |
+| `lastSeen` | Last time the device was connected | On BLE activity (in-memory only, not persisted) |
+| `linkQuality` | Coarse signal quality: `good`, `fair`, `poor`, `unknown` | On RSSI change (persisted only when bucket changes) |
+
+### Link Quality Buckets
+
+| Bucket | RSSI Range | Color |
+|--------|-----------|-------|
+| `good` | >= -60 dBm | Green |
+| `fair` | -75 to -61 dBm | Yellow |
+| `poor` | -90 to -76 dBm | Orange |
+| `unknown` | < -90 dBm or no data | Gray |
+
+## Surface Policy Configuration
 
 ### CLI
 
@@ -56,6 +118,15 @@ Policy is stored at `~/Library/Application Support/TouchBridge/policy.plist`:
     <real>15</real>
     <key>RSSIThreshold</key>
     <integer>-75</integer>
+    <key>ForcePasswordFallback</key>
+    <false/>
+    <key>DeviceSelection</key>
+    <dict>
+        <key>mode</key>
+        <string>any_one_of</string>
+        <key>group</key>
+        <string>all</string>
+    </dict>
     <key>Surfaces</key>
     <dict>
         <key>sudo</key>
@@ -89,6 +160,11 @@ After a successful biometric authentication, subsequent requests within the TTL 
 
 <TypeTable
   type={{
+    ForcePasswordFallback: {
+      type: "boolean",
+      default: "false",
+      description: "Kill-switch. When true, all auth requests fall through to password immediately.",
+    },
     AuthTimeoutSeconds: {
       type: "number",
       default: "15",
@@ -98,6 +174,16 @@ After a successful biometric authentication, subsequent requests within the TTL 
       type: "number",
       default: "-75",
       description: "BLE signal strength threshold in dBm. Companion must be closer than this to approve.",
+    },
+    "DeviceSelection.mode": {
+      type: '"any_one_of" | "priority_order"',
+      default: '"any_one_of"',
+      description: "How challenges are dispatched to multiple devices.",
+    },
+    "DeviceSelection.group": {
+      type: "string",
+      default: '"all"',
+      description: "Device group name. 'all' means every enabled paired device.",
     },
     "Surfaces.<name>.mode": {
       type: '"biometric_required" | "proximity_session"',

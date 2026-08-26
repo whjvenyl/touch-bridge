@@ -17,15 +17,17 @@ sidebar:
 5. Pairing is explicit and one-time (QR code ceremony)
 6. Timeout = fail open to password, not to grant
 7. Daemon runs as user, not root
+8. Identify requires proof-of-possession (signature over deviceID + session key)
+9. Kill-switch always available (`TOUCHBRIDGE_FORCE_PASSWORD=1`)
 
 ## Cryptographic Chain
 
 <Accordion>
   <AccordionItem title="Pairing (one-time)">
 
-- iPhone generates ECDSA P-256 key in Secure Enclave
-- Public key transferred to Mac via BLE during QR pairing ceremony
-- Mac stores public key in Keychain tagged with device UUID
+- Companion generates ECDSA P-256 key in Secure Enclave / Keystore
+- Public key + device type + capabilities transferred to Mac via BLE during QR pairing ceremony
+- Mac stores public key and device metadata in Keychain tagged with device UUID
 
   </AccordionItem>
   <AccordionItem title="Per-Session (ECDH)">
@@ -35,13 +37,30 @@ sidebar:
 - All challenge/response data encrypted with AES-GCM
 
   </AccordionItem>
+  <AccordionItem title="Identify (proof-of-possession)">
+
+- After ECDH, companion sends `Identify` with `deviceID`, `deviceName`, `deviceType`, and `signature`
+- Signature = ECDSA P-256 of `(deviceID concatenated with daemonEphemeralPubKey)` signed with long-term paired key
+- Daemon verifies against pinned public key from Keychain
+- Binds the identify to this specific ECDH session — prevents replay
+- Daemon rejects if signature is missing, invalid, or over the wrong key
+
+  </AccordionItem>
   <AccordionItem title="Per-Request (Challenge-Response)">
 
 - Mac generates 32-byte nonce via `SecRandomCopyBytes`
-- Nonce encrypted and sent to iPhone via BLE
-- iPhone decrypts, prompts biometric, signs with Secure Enclave key
+- Nonce encrypted and sent to companion via BLE
+- Companion decrypts, prompts biometric, signs with Secure Enclave / Keystore key
 - Mac verifies ECDSA signature against pinned public key
 - Nonce marked as seen (60s replay window)
+
+  </AccordionItem>
+  <AccordionItem title="Watch Delegation Rule">
+
+- A WATCH without `hasSecureEnclave` must not sign challenges directly
+- Daemon rejects direct ChallengeResponse from such devices with `FAILED_WATCH_DELEGATION_VIOLATION`
+- The watch must delegate challenge signing to its paired phone (which has SEP + biometric)
+- Watches WITH a secure enclave (e.g. Apple Watch Ultra) may sign directly
 
   </AccordionItem>
 </Accordion>
@@ -52,7 +71,7 @@ sidebar:
   type={{
     signature: {
       type: "ECDSA P-256",
-      description: "Challenge-response signatures from Secure Enclave",
+      description: "Challenge-response and identify signatures from Secure Enclave / Keystore",
     },
     keyAgreement: {
       type: "ECDH P-256",
@@ -60,7 +79,7 @@ sidebar:
     },
     encryption: {
       type: "AES-256-GCM",
-      description: "Authenticated encryption for challenge/response payloads",
+      description: "Authenticated encryption for challenge/response/identify payloads",
     },
     kdf: {
       type: "HKDF-SHA256",
@@ -74,8 +93,21 @@ sidebar:
       type: "32 bytes, Base64",
       description: "One-time token in QR payload, 5-minute window",
     },
+    identifySignature: {
+      type: "ECDSA P-256 of (deviceID + ephemeralPubKey)",
+      description: "Proof-of-possession signed with long-term paired key. Required — daemon rejects without it.",
+    },
   }}
 />
+
+## Kill-Switch
+
+If a policy or daemon regression breaks `sudo`, the user can force password fallback without uninstalling:
+
+- **Environment variable:** `TOUCHBRIDGE_FORCE_PASSWORD=1`
+- **Plist key:** `ForcePasswordFallback: true` in `policy.plist`
+
+When active, `authenticateFromPAM` returns immediately with `forced_fallback` — no BLE challenges are dispatched. PAM falls through to the normal password prompt.
 
 ## Threat Model
 
@@ -86,6 +118,10 @@ sidebar:
 - **MITM on BLE**: ECDH session keys + AES-GCM encryption
 - **Unauthorized pairing**: single-use token, QR ceremony required
 - **Silent approval**: biometric gate on companion device
+- **Identity spoofing**: identify signature proves possession of paired private key
+- **Session replay**: identify signature binds to the specific ECDH ephemeral key
+- **Watch bypass**: watches without secure enclave cannot sign challenges directly
+- **Daemon lockout**: kill-switch forces password fallback without uninstall
 
 ### What we don't protect against
 
@@ -93,7 +129,8 @@ sidebar:
 - **Compromised Secure Enclave**: assumed impossible per Apple's threat model
 - **macOS kernel compromise**: SIP-protected paths are out of scope
 - **BLE jamming**: denial of service falls through to password
+- **Unauthenticated ECDH**: a MITM could observe encrypted traffic (but cannot forge approvals)
 
 :::note
-TouchBridge is fail-open to password. If anything goes wrong — daemon down, phone unreachable, BLE jammed, timeout — the normal password prompt appears. You are never locked out.
+TouchBridge is fail-open to password. If anything goes wrong — daemon down, phone unreachable, BLE jammed, timeout, kill-switch active — the normal password prompt appears. You are never locked out.
 :::
