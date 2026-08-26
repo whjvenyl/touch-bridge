@@ -12,6 +12,9 @@ dist/
 *.zip
 *.tar.gz
 
+# Build output (build-all.sh copies artifacts here)
+build/
+
 # Secrets — never commit
 .env
 *.key

@@ -26,8 +26,13 @@ if [[ "$BUILD_MODE" == "release" ]]; then
   XCODE_CONFIG="Release"
 fi
 
+# Local build output directory (gitignored)
+BUILD_DIR="$PROJECT_DIR/build"
+mkdir -p "$BUILD_DIR"
+
 echo "━━━ TouchBridge Build ━━━"
 echo "Mode: $BUILD_MODE${RUN_TESTS:+ (with tests)}"
+echo "Output: $BUILD_DIR/"
 echo ""
 
 # 0. Generate protobuf code (if protoc is available)
@@ -55,31 +60,68 @@ fi
 echo "▸ Building macOS project (daemon + menubar)…"
 cd "$PROJECT_DIR/mac"
 xcodegen generate 2>&1 | tail -1
-xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge -configuration "$XCODE_CONFIG" build 2>&1 | tail -3
+
+# Use a temp dir for DerivedData so it doesn't clutter the project
+DERIVED_DATA="$(mktemp -d -t touchbridge-derived)"
+trap 'rm -rf "$DERIVED_DATA"' EXIT
+xcodebuild -project TouchBridge.xcodeproj \
+  -scheme touchbridge \
+  -configuration "$XCODE_CONFIG" \
+  -derivedDataPath "$DERIVED_DATA" \
+  build 2>&1 | tail -3
 if [[ "$RUN_TESTS" == true ]]; then
   echo "▸ Testing daemon…"
-  xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge -configuration Debug test 2>&1 | tail -3
+  xcodebuild -project TouchBridge.xcodeproj \
+    -scheme touchbridge \
+    -configuration Debug \
+    -derivedDataPath "$DERIVED_DATA" \
+    test 2>&1 | tail -3
 fi
-echo "  ✓ Daemon"
+
+# Copy daemon binary to build/
+DAEMON_BIN="$DERIVED_DATA/Build/Products/$XCODE_CONFIG/touchbridge"
+if [[ -f "$DAEMON_BIN" ]]; then
+  cp "$DAEMON_BIN" "$BUILD_DIR/touchbridge"
+  chmod 755 "$BUILD_DIR/touchbridge"
+  echo "  ✓ Daemon → $BUILD_DIR/touchbridge"
+else
+  echo "  ✗ Daemon binary not found at $DAEMON_BIN"
+  exit 1
+fi
 echo ""
 
 # 3. PAM module
 echo "▸ Building PAM module…"
 make -C "$PROJECT_DIR/mac/pam" 2>&1 | tail -3
-echo "  ✓ PAM module"
+cp "$PROJECT_DIR/mac/pam/pam_touchbridge.so" "$BUILD_DIR/pam_touchbridge.so"
+echo "  ✓ PAM module → $BUILD_DIR/pam_touchbridge.so"
 echo ""
 
 # 4. Menubar app (bundled in the same Xcode project)
 echo "▸ Building menubar app…"
-xcodebuild -project TouchBridge.xcodeproj -scheme TouchBridgeMenu -configuration "$XCODE_CONFIG" build 2>&1 | tail -3
-echo "  ✓ Menubar app"
+xcodebuild -project TouchBridge.xcodeproj \
+  -scheme TouchBridgeMenu \
+  -configuration "$XCODE_CONFIG" \
+  -derivedDataPath "$DERIVED_DATA" \
+  build 2>&1 | tail -3
+
+# Copy menubar app to build/
+MENU_APP="$DERIVED_DATA/Build/Products/$XCODE_CONFIG/TouchBridgeMenu.app"
+if [[ -d "$MENU_APP" ]]; then
+  rm -rf "$BUILD_DIR/TouchBridgeMenu.app"
+  cp -R "$MENU_APP" "$BUILD_DIR/TouchBridgeMenu.app"
+  echo "  ✓ Menubar app → $BUILD_DIR/TouchBridgeMenu.app"
+else
+  echo "  ✗ Menubar app not found at $MENU_APP"
+  exit 1
+fi
 echo ""
 
 echo "━━━ Build Complete ━━━"
 echo ""
-echo "Built components:"
-echo "  • Daemon:    mac/ (DerivedData)"
-echo "  • PAM:       mac/pam/pam_touchbridge.so"
-echo "  • Menubar:   mac/ (DerivedData)"
+echo "Built components in $BUILD_DIR/:"
+ls -1 "$BUILD_DIR"
 echo ""
-echo "To install: sudo bash scripts/install.sh"
+echo "To run the menubar app:  open $BUILD_DIR/TouchBridgeMenu.app"
+echo "To install via CLI:      sudo bash scripts/install.sh"
+echo "To install via menubar:  click 'Install TouchBridge' in the menu bar app"
