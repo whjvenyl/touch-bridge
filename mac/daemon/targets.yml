@@ -1,0 +1,35 @@
+targets:
+  TouchBridgeCore:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/TouchBridgeCore
+    dependencies:
+      - package: TouchBridgeProtocol
+    settings:
+      base:
+        PRODUCT_NAME: TouchBridgeCore
+        GENERATE_INFOPLIST_FILE: YES
+
+  touchbridge:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources/touchbridge
+    dependencies:
+      - target: TouchBridgeCore
+      - package: ArgumentParser
+    settings:
+      base:
+        PRODUCT_NAME: touchbridge
+
+  TouchBridgeCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/TouchBridgeCoreTests
+    dependencies:
+      - target: TouchBridgeCore
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES

@@ -1,0 +1,87 @@
+targets:
+  TouchBridgeHelper:
+    type: tool
+    platform: macOS
+    sources:
+      - path: TouchBridgeHelper
+    info:
+      path: TouchBridgeHelper/Info.plist
+    entitlements:
+      path: TouchBridgeHelper/TouchBridgeHelper.entitlements
+      properties:
+        com.apple.developer.service-management.managed-by-main-app: true
+    settings:
+      base:
+        PRODUCT_NAME: dev.touchbridge.helper
+        PRODUCT_BUNDLE_IDENTIFIER: dev.touchbridge.helper
+        CODE_SIGN_IDENTITY: "-"
+
+  TouchBridgeMenu:
+    type: application
+    platform: macOS
+    sources:
+      - path: TouchBridgeMenu
+      - path: TouchBridgeHelper/HelperProtocol.swift
+    info:
+      path: TouchBridgeMenu/Info.plist
+      properties:
+        CFBundleDisplayName: TouchBridge
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        LSUIElement: true
+        NSBluetoothAlwaysUsageDescription: "TouchBridge needs Bluetooth to communicate with your phone."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.touchbridge.menubar
+        CODE_SIGN_IDENTITY: "-"
+    dependencies:
+      - target: TouchBridgeHelper
+    preBuildScripts:
+      - name: Bundle daemon and PAM module
+        runOnlyWhenInstalling: false
+        basedOnDependencyAnalysis: false
+        outputFiles:
+          - $(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/Contents/Resources/touchbridge
+          - $(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/Contents/Resources/pam_touchbridge.so
+        script: |
+          set -euo pipefail
+          RESOURCES_DIR="$BUILT_PRODUCTS_DIR/$PRODUCT_NAME.app/Contents/Resources"
+
+          # Daemon binary is built by the touchbridge target in this same project
+          DAEMON_BIN="$BUILT_PRODUCTS_DIR/touchbridge"
+          if [ ! -f "$DAEMON_BIN" ]; then
+            echo "error: touchbridge binary not found at $DAEMON_BIN"
+            exit 1
+          fi
+          mkdir -p "$RESOURCES_DIR"
+          rm -f "$RESOURCES_DIR/touchbridge" "$RESOURCES_DIR/pam_touchbridge.so"
+          cp "$DAEMON_BIN" "$RESOURCES_DIR/touchbridge"
+          chmod 755 "$RESOURCES_DIR/touchbridge"
+
+          # Build PAM module (universal binary)
+          cd "$PROJECT_DIR/pam"
+          make clean 2>/dev/null || true
+          make 2>&1
+          if [ ! -f "pam_touchbridge.so" ]; then
+            echo "error: pam_touchbridge.so not found"
+            exit 1
+          fi
+          cp "pam_touchbridge.so" "$RESOURCES_DIR/pam_touchbridge.so"
+          chmod 444 "$RESOURCES_DIR/pam_touchbridge.so"
+
+          echo "Bundled touchbridge + pam_touchbridge.so into app Resources"
+    postBuildScripts:
+      - name: Embed privileged helper in LaunchDaemons
+        basedOnDependencyAnalysis: false
+        outputFiles:
+          - $(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/Contents/Library/LaunchDaemons/dev.touchbridge.helper
+          - $(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/Contents/Library/LaunchDaemons/dev.touchbridge.helper.plist
+        script: |
+          set -euo pipefail
+          APP_BUNDLE="$BUILT_PRODUCTS_DIR/$PRODUCT_NAME.app"
+          LAUNCH_DAEMONS_DIR="$APP_BUNDLE/Contents/Library/LaunchDaemons"
+          mkdir -p "$LAUNCH_DAEMONS_DIR"
+          cp "$BUILT_PRODUCTS_DIR/dev.touchbridge.helper" "$LAUNCH_DAEMONS_DIR/dev.touchbridge.helper"
+          chmod 755 "$LAUNCH_DAEMONS_DIR/dev.touchbridge.helper"
+          cp "$PROJECT_DIR/menubar/TouchBridgeHelper/dev.touchbridge.helper.plist" "$LAUNCH_DAEMONS_DIR/dev.touchbridge.helper.plist"
+          echo "Embedded privileged helper in $LAUNCH_DAEMONS_DIR"
