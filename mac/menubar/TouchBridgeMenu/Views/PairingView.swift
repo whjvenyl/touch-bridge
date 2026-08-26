@@ -130,7 +130,7 @@ struct PairingView: View {
                 state.cancelPairing()
             }
         }
-        .onChange(of: state.pairingSucceeded) { succeeded in
+        .onChange(of: state.pairingSucceeded) { _, succeeded in
             // Auto-close the pairing window 3 seconds after success,
             // giving the user time to see the confirmation.
             if succeeded {

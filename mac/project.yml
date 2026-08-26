@@ -2,7 +2,7 @@ name: TouchBridge
 options:
   bundleIdPrefix: dev.touchbridge
   deploymentTarget:
-    macOS: "13.0"
+    macOS: "14.0"
   xcodeVersion: "15.0"
   generateEmptyDirectories: true
 

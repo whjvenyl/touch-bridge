@@ -3,6 +3,7 @@ import SwiftUI
 struct MenuBarView: View {
     @ObservedObject var state: MenuBarState
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -282,7 +283,7 @@ struct MenuBarView: View {
             .padding(.vertical, 4)
 
             Button {
-                openWindow(id: "settings")
+                openSettings()
             } label: {
                 Label("Settings…", systemImage: "gear")
             }

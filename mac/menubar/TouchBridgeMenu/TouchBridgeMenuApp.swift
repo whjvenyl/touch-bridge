@@ -27,12 +27,12 @@ struct TouchBridgeMenuApp: App {
         }
         .windowResizability(.contentSize)
 
-        // Settings window (using WindowGroup instead of Settings so it works
-        // in a menu bar-only app where there's no app menu for showSettingsWindow:)
-        WindowGroup("TouchBridge Settings", id: "settings") {
+        // Settings window — uses the Settings scene so SwiftUI manages a
+        // single instance (focuses existing window instead of opening duplicates).
+        // Opened from the menu bar via openSettings environment action.
+        Settings {
             SettingsWindowView(state: appState)
         }
-        .windowResizability(.contentSize)
     }
 
     private var menuBarColor: Color {
