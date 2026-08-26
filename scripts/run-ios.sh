@@ -74,14 +74,21 @@ fi
 PHYSICAL_UDID=""
 PHYSICAL_NAME=""
 if command -v xcrun &>/dev/null; then
-  # devicectl list outputs a table; parse the UDID (3rd column) and name.
-  while IFS=$'\t' read -r name _ udid state _; do
-    # Skip header and unavailable devices
-    [[ "$udid" =~ ^[0-9A-F]{8}- ]] || continue
-    [[ "$state" == "available" ]] || continue
-    PHYSICAL_UDID="$udid"
-    PHYSICAL_NAME="$name"
-    break
+  # devicectl list outputs a space-padded table. The columns are:
+  #   Name  Hostname  Identifier  State  Model
+  # We extract the UDID (matches UUID format) and check state contains "available".
+  while read -r line; do
+    # Extract the UDID (UUID format) from the line
+    if [[ "$line" =~ ([0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}) ]]; then
+      udid="${BASH_REMATCH[1]}"
+      # Check if the line contains "available" in the state column
+      if echo "$line" | grep -q "available"; then
+        # Extract the name (first field before the hostname)
+        PHYSICAL_NAME="$(echo "$line" | awk '{print $1}')"
+        PHYSICAL_UDID="$udid"
+        break
+      fi
+    fi
   done < <(xcrun devicectl list devices 2>/dev/null | tail -n +2)
 fi
 
