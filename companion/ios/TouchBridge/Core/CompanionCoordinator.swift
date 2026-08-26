@@ -233,6 +233,7 @@ public final class CompanionCoordinator: NSObject, @unchecked Sendable {
                 $0.deviceID = deviceID
                 $0.deviceName = UIDevice.current.name
                 $0.signature = signature
+                $0.deviceType = .phone
             }
             let plaintext = try msg.serializedData()
             let encrypted = try crypto.encrypt(plaintext: plaintext)
@@ -275,6 +276,14 @@ public final class CompanionCoordinator: NSObject, @unchecked Sendable {
                 $0.publicKey = publicKey
                 $0.deviceID = deviceID
                 if let token = pendingPairingToken { $0.pairingToken = token }
+                $0.deviceType = .phone
+                $0.caps = TBDeviceCapabilities.with {
+                    $0.hasBiometric_p = true
+                    $0.hasSecureEnclave_p = true
+                    $0.hasDisplay_p = true
+                    $0.hasButton_p = false
+                    $0.latencyClass = 0
+                }
             }
 
             let payload = try request.serializedData()

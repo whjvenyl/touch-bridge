@@ -3,17 +3,79 @@ import Security
 import TouchBridgeProtocol
 
 /// A paired companion device record.
+///
+/// Stored in the macOS Keychain as pairing material (rarely written).
+/// Runtime state (lastSeen, enabled, priority) lives in DeviceRuntimeStore,
+/// not here — Keychain writes are expensive and not designed for hot mutation.
 public struct PairedDevice: Codable, Sendable, Equatable {
     public let deviceID: String
     public let publicKey: Data
     public let displayName: String
     public let pairedAt: Date
+    public let deviceType: Int      // TBDeviceType raw value (0=unspecified, 1=phone, 2=watch, 3=ring, 4=tablet)
+    public let caps: DeviceCaps
 
-    public init(deviceID: String, publicKey: Data, displayName: String, pairedAt: Date) {
+    /// Convenience accessor for the protobuf enum.
+    public var tbDeviceType: TBDeviceType {
+        TBDeviceType(rawValue: deviceType) ?? .unspecified
+    }
+
+    public init(
+        deviceID: String,
+        publicKey: Data,
+        displayName: String,
+        pairedAt: Date,
+        deviceType: TBDeviceType = .unspecified,
+        caps: TBDeviceCapabilities = TBDeviceCapabilities()
+    ) {
         self.deviceID = deviceID
         self.publicKey = publicKey
         self.displayName = displayName
         self.pairedAt = pairedAt
+        self.deviceType = deviceType.rawValue
+        self.caps = DeviceCaps(from: caps)
+    }
+}
+
+/// Codable capabilities struct — mirrors TBDeviceCapabilities but is JSON-encodable
+/// for Keychain storage. Convert to/from TBDeviceCapabilities at the boundary.
+public struct DeviceCaps: Codable, Sendable, Equatable {
+    public let hasBiometric: Bool
+    public let hasSecureEnclave: Bool
+    public let hasDisplay: Bool
+    public let hasButton: Bool
+    public let latencyClass: UInt32
+
+    public init(
+        hasBiometric: Bool = false,
+        hasSecureEnclave: Bool = false,
+        hasDisplay: Bool = false,
+        hasButton: Bool = false,
+        latencyClass: UInt32 = 0
+    ) {
+        self.hasBiometric = hasBiometric
+        self.hasSecureEnclave = hasSecureEnclave
+        self.hasDisplay = hasDisplay
+        self.hasButton = hasButton
+        self.latencyClass = latencyClass
+    }
+
+    public init(from caps: TBDeviceCapabilities) {
+        self.hasBiometric = caps.hasBiometric_p
+        self.hasSecureEnclave = caps.hasSecureEnclave_p
+        self.hasDisplay = caps.hasDisplay_p
+        self.hasButton = caps.hasButton_p
+        self.latencyClass = caps.latencyClass
+    }
+
+    public func toTB() -> TBDeviceCapabilities {
+        TBDeviceCapabilities.with {
+            $0.hasBiometric_p = hasBiometric
+            $0.hasSecureEnclave_p = hasSecureEnclave
+            $0.hasDisplay_p = hasDisplay
+            $0.hasButton_p = hasButton
+            $0.latencyClass = latencyClass
+        }
     }
 }
 

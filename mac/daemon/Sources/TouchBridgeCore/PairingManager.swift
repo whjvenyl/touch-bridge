@@ -90,7 +90,9 @@ public actor PairingManager {
         token: Data,
         devicePublicKey: Data,
         deviceName: String,
-        deviceID: String
+        deviceID: String,
+        deviceType: TBDeviceType = .unspecified,
+        caps: TBDeviceCapabilities = TBDeviceCapabilities()
     ) throws -> PairedDevice {
         guard let active = activePairing else {
             logger.warning("Pairing request received but no active pairing session")
@@ -134,7 +136,9 @@ public actor PairingManager {
             deviceID: deviceID,
             publicKey: devicePublicKey,
             displayName: deviceName,
-            pairedAt: Date()
+            pairedAt: Date(),
+            deviceType: deviceType,
+            caps: caps
         )
 
         logger.info("Pairing request validated for \(deviceName)")

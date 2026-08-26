@@ -6,6 +6,8 @@ import dev.touchbridge.android.proto.ChallengeResponse
 import dev.touchbridge.android.proto.Error
 import dev.touchbridge.android.proto.Identify
 import dev.touchbridge.android.proto.PairRequest
+import dev.touchbridge.android.proto.DeviceType
+import dev.touchbridge.android.proto.DeviceCapabilities
 import dev.touchbridge.android.proto.PairResponse
 import com.google.protobuf.ByteString
 
@@ -52,11 +54,17 @@ object WireFormat {
 
     /// Build an identify message: [version][type=6] + protobuf Identify.
     /// The signature proves possession of the paired private key.
-    fun buildIdentify(deviceID: String, deviceName: String, signature: ByteArray): ByteArray {
+    fun buildIdentify(
+        deviceID: String,
+        deviceName: String,
+        signature: ByteArray,
+        deviceType: DeviceType = DeviceType.PHONE
+    ): ByteArray {
         val msg = Identify.newBuilder()
             .setDeviceId(deviceID)
             .setDeviceName(deviceName)
             .setSignature(ByteString.copyFrom(signature))
+            .setDeviceType(deviceType)
             .build()
         return encode(TYPE_IDENTIFY, msg.toByteArray())
     }
@@ -66,13 +74,23 @@ object WireFormat {
         deviceName: String,
         publicKey: ByteArray,
         deviceID: String,
-        pairingToken: ByteArray
+        pairingToken: ByteArray,
+        deviceType: DeviceType = DeviceType.PHONE,
+        caps: DeviceCapabilities = DeviceCapabilities.newBuilder()
+            .setHasBiometric(true)
+            .setHasSecureEnclave(true)
+            .setHasDisplay(true)
+            .setHasButton(false)
+            .setLatencyClass(0)
+            .build()
     ): ByteArray {
         val msg = PairRequest.newBuilder()
             .setDeviceName(deviceName)
             .setPublicKey(ByteString.copyFrom(publicKey))
             .setDeviceId(deviceID)
             .setPairingToken(ByteString.copyFrom(pairingToken))
+            .setDeviceType(deviceType)
+            .setCaps(caps)
             .build()
         return encode(TYPE_PAIR_REQUEST, msg.toByteArray())
     }

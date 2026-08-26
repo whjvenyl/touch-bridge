@@ -34,12 +34,38 @@ enum MessageType {
 // Pairing
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Device types and capabilities
+// ---------------------------------------------------------------------------
+
+// Type of companion device — determines UI behavior and delegation rules.
+enum DeviceType {
+  DEVICE_TYPE_UNSPECIFIED = 0;
+  PHONE   = 1;    // iPhone, Android phone — has biometric + secure element
+  WATCH   = 2;    // Apple Watch, Wear OS — may lack SEP, delegates to phone
+  RING    = 3;    // Smart ring — no display, button-only approval
+  TABLET  = 4;    // iPad, Android tablet — same capabilities as phone
+}
+
+// Capabilities descriptor — tells the daemon what the device can do.
+// Used to enforce delegation rules (e.g. watch without SEP must delegate
+// challenge signing to its paired phone).
+message DeviceCapabilities {
+  bool   has_biometric       = 1;  // Face ID, fingerprint, iris, etc.
+  bool   has_secure_enclave  = 2;  // Hardware-backed key storage (SEP, TEE, StrongBox)
+  bool   has_display         = 3;  // Can show challenge UI (reason, approve/deny)
+  bool   has_button          = 4;  // Physical button for approval (ring tap)
+  uint32 latency_class       = 5;  // 0=fast (phone), 1=medium (watch), 2=slow (ring)
+}
+
 // Sent by companion → Mac to initiate pairing.
 message PairRequest {
   string device_name = 1;
   bytes  public_key = 2;        // X9.63 uncompressed P-256 public key (65 bytes)
   string device_id = 3;         // Stable companion device identifier
   bytes  pairing_token = 4;     // One-time token from QR payload (optional on re-pair)
+  DeviceType device_type = 5;   // PHONE, WATCH, RING, TABLET
+  DeviceCapabilities caps = 6;  // Biometric, SEP, display, button, latency
 }
 
 // Sent by Mac → companion to accept/reject pairing.
@@ -78,9 +104,19 @@ message ChallengeResponse {
 message Identify {
   string device_id = 1;
   string device_name = 2;
-  bytes  signature = 3;         // ECDSA P-256 signature of (device_id || ephemeral_pub_key)
+  bytes  signature = 3;         // ECDSA P-256 signature of (device_id || daemon_ephemeral_pub_key)
                                 // Signed with the device's long-term paired key.
                                 // Required — daemon rejects Identify without a valid signature.
+                                //
+                                // Signing details:
+                                //   - Message = device_id (UTF-8 bytes) || daemon_ephemeral_pub_key (X9.63 raw bytes)
+                                //   - The signing API hashes the message with SHA-256 internally.
+                                //     Do NOT pre-hash — that would cause a double-hash mismatch.
+                                //     iOS: SecKeyCreateSignature(.ecdsaSignatureMessageX962SHA256)
+                                //     Android: Signature.getInstance("SHA256withECDSA")
+                                //   - Signature encoding: X9.63 raw format (r || s, 64 bytes for P-256).
+                                //     Android's SHA256withECDSA produces DER; convert to raw r||s before sending.
+  DeviceType device_type = 4;   // Refresh device type on reconnect (may change after OS update)
 }
 
 // ---------------------------------------------------------------------------

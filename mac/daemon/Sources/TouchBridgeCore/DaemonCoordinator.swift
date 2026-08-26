@@ -51,6 +51,7 @@ public final class DaemonCoordinator: NSObject, PAMAuthHandler, @unchecked Senda
         var ephemeralPrivateKey: P256.KeyAgreement.PrivateKey?
         var sessionCrypto: SessionCrypto?
         var deviceID: String?
+        var deviceType: TBDeviceType = .unspecified
     }
 
     public init(
@@ -419,7 +420,9 @@ extension DaemonCoordinator: BLEServerDelegate {
                     token: request.pairingToken,
                     devicePublicKey: request.publicKey,
                     deviceName: request.deviceName,
-                    deviceID: request.deviceID.isEmpty ? centralID.uuidString : request.deviceID
+                    deviceID: request.deviceID.isEmpty ? centralID.uuidString : request.deviceID,
+                    deviceType: request.deviceType,
+                    caps: request.caps
                 )
 
                 try await pairingManager.completePairing(device: device)
@@ -499,6 +502,30 @@ extension DaemonCoordinator: BLEServerDelegate {
 
                 guard let challengeID = UUID(uuidString: response.challengeID) else {
                     logger.error("Invalid challenge ID in response")
+                    return
+                }
+
+                // Enforce watch delegation rule: a WATCH without a secure enclave
+                // must not sign challenges directly — it must delegate to its paired
+                // phone (which has the SEP + biometric). This prevents a watch
+                // without hardware-backed key storage from approving sudo.
+                let (sessionDeviceType, sessionDeviceID) = stateLock.withLock {
+                    (sessions[centralID]?.deviceType, sessions[centralID]?.deviceID)
+                }
+                if let pairedDevice = try? keychainStore.retrievePairedDevice(deviceID: response.deviceID),
+                   pairedDevice.tbDeviceType == .watch,
+                   !pairedDevice.caps.hasSecureEnclave {
+                    logger.warning("WATCH (\(response.deviceID)) without SEP attempted direct ChallengeResponse — rejecting. Watch must delegate to phone.")
+                    await auditLog.log(AuditEntry(
+                        sessionID: response.challengeID,
+                        surface: "challenge",
+                        deviceID: response.deviceID,
+                        result: "FAILED_WATCH_DELEGATION_VIOLATION"
+                    ))
+                    let continuation = stateLock.withLock {
+                        pendingAuthentications.removeValue(forKey: challengeID)
+                    }
+                    continuation?.resume(returning: .invalidSignature)
                     return
                 }
 
@@ -621,8 +648,11 @@ extension DaemonCoordinator: BLEServerDelegate {
             return
         }
 
-        stateLock.withLock { sessions[centralID]?.deviceID = msg.deviceID }
-        logger.info("Identified \(msg.deviceName) (\(msg.deviceID)) on central \(centralID) — signature verified")
+        stateLock.withLock {
+            sessions[centralID]?.deviceID = msg.deviceID
+            sessions[centralID]?.deviceType = msg.deviceType
+        }
+        logger.info("Identified \(msg.deviceName) (\(msg.deviceID)) type=\(String(describing: msg.deviceType)) on central \(centralID) — signature verified")
 
         await auditLog.log(AuditEntry(
             sessionID: centralID.uuidString,

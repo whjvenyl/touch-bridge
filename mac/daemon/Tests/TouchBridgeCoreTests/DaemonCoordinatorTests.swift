@@ -154,7 +154,14 @@ final class CompanionSimulator: @unchecked Sendable {
         return try makeIdentifyData(signatureMode: .tampered)
     }
 
-    private enum SignatureMode { case valid, omitted, tampered }
+    /// Create an identify message signed with the wrong daemon ephemeral key
+    /// (simulates a MITM who intercepts ECDH — signature is valid ECDSA but
+    /// over a different key than the daemon's).
+    func makeIdentifyDataWithWrongEphemeralKey() throws -> Data {
+        return try makeIdentifyData(signatureMode: .wrongEphemeralKey)
+    }
+
+    private enum SignatureMode { case valid, omitted, tampered, wrongEphemeralKey }
 
     private func makeIdentifyData(signatureMode: SignatureMode) throws -> Data {
         guard let crypto = sessionCrypto else { throw CompanionError.noSession }
@@ -172,6 +179,19 @@ final class CompanionSimulator: @unchecked Sendable {
             // Valid signature with one byte flipped
             var sig = try signIdentify(daemonPubKey: daemonPubKey)
             if !sig.isEmpty { sig[sig.count - 1] ^= 0xFF }
+            msg = TBIdentify.with {
+                $0.deviceID = deviceID
+                $0.deviceName = deviceName
+                $0.signature = sig
+            }
+        case .wrongEphemeralKey:
+            // Valid signature, but over a DIFFERENT daemon ephemeral key.
+            // Simulates a MITM who intercepts ECDH: the companion signs with
+            // the MITM's ephemeral key, but the daemon verifies against its own.
+            // The signature is valid ECDSA but won't match the daemon's key.
+            let fakeKey = P256.KeyAgreement.PrivateKey()
+            let fakePubKey = SessionCrypto.exportPublicKey(fakeKey.publicKey)
+            let sig = try signIdentify(daemonPubKey: fakePubKey)
             msg = TBIdentify.with {
                 $0.deviceID = deviceID
                 $0.deviceName = deviceName
@@ -316,12 +336,25 @@ private func makeTestCoordinator() -> (
 }
 
 /// Register a companion's signing key in the keychain so `identify` and auth work.
-private func register(_ companion: CompanionSimulator, in keychain: KeychainStore) throws {
+private func register(
+    _ companion: CompanionSimulator,
+    in keychain: KeychainStore,
+    deviceType: TBDeviceType = .phone,
+    caps: TBDeviceCapabilities = TBDeviceCapabilities.with {
+        $0.hasBiometric_p = true
+        $0.hasSecureEnclave_p = true
+        $0.hasDisplay_p = true
+        $0.hasButton_p = false
+        $0.latencyClass = 0
+    }
+) throws {
     let device = PairedDevice(
         deviceID: companion.deviceID,
         publicKey: companion.signingPublicKeyData,
         displayName: companion.deviceName,
-        pairedAt: Date()
+        pairedAt: Date(),
+        deviceType: deviceType,
+        caps: caps
     )
     try keychain.storePairedDevice(device)
 }
@@ -1217,3 +1250,160 @@ private func lastPairResponse(_ bleServer: MockBLEServer) throws -> TBPairRespon
     #expect(result.reason == "no_companion_connected")
 }
 
+
+@Test func identifyWithWrongEphemeralKeyIsRejected() async throws {
+    // Simulates a MITM who intercepts ECDH: the companion signs with the
+    // MITM's ephemeral key, but the daemon verifies against its own.
+    // The signature is valid ECDSA but won't match — daemon must reject.
+    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let companion = CompanionSimulator()
+    try register(companion, in: keychain)
+
+    // ECDH
+    bleServer.simulateConnect(companion.centralID)
+    let clientKey = companion.ecdhPublicKeyData()
+    let serverKey = bleServer.simulateSessionKey(clientKey, from: companion.centralID)!
+    try companion.completeECDH(daemonPublicKeyData: serverKey)
+
+    // Send identify signed with a wrong daemon ephemeral key
+    let identifyData = try companion.makeIdentifyDataWithWrongEphemeralKey()
+    bleServer.simulatePairingData(identifyData, from: companion.centralID)
+    try await Task.sleep(nanoseconds: 80_000_000)
+
+    let entries = try await auditLog.readEntries()
+    #expect(entries.contains { $0.result == "REJECTED_INVALID_SIGNATURE" })
+    #expect(!entries.contains { $0.result == "IDENTIFIED" })
+
+    // Auth should fail — device was not identified
+    let result = await coordinator.authenticateFromPAM(user: "u", service: "sudo", pid: 1, timeout: 0.5)
+    #expect(result.success == false)
+    #expect(result.reason == "no_companion_connected")
+}
+
+// MARK: - Device Type & Capabilities Tests
+
+@Test func pairRequestStoresDeviceTypeAndCaps() async throws {
+    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+
+    // Generate pairing QR
+    let qrData = try await coordinator.pairingManager.generatePairingQRData()
+    let payload = try JSONDecoder().decode(PairingPayload.self, from: qrData)
+
+    // Simulate a phone connecting and sending a pair request with deviceType=PHONE + caps
+    let companion = CompanionSimulator(deviceName: "Test iPhone")
+    bleServer.simulateConnect(companion.centralID)
+
+    let pairReq = TBPairRequest.with {
+        $0.deviceName = "Test iPhone"
+        $0.publicKey = companion.signingPublicKeyData
+        $0.deviceID = companion.deviceID
+        $0.pairingToken = payload.pairingToken
+        $0.deviceType = .phone
+        $0.caps = TBDeviceCapabilities.with {
+            $0.hasBiometric_p = true
+            $0.hasSecureEnclave_p = true
+            $0.hasDisplay_p = true
+            $0.hasButton_p = false
+            $0.latencyClass = 0
+        }
+    }
+    let pairWire = try WireFormat.encode(.pairRequest, pairReq)
+    bleServer.simulatePairingData(pairWire, from: companion.centralID)
+    try await Task.sleep(nanoseconds: 100_000_000)
+
+    // Verify the device was stored with the correct type + caps
+    let stored = try keychain.retrievePairedDevice(deviceID: companion.deviceID)
+    #expect(stored.tbDeviceType == .phone)
+    #expect(stored.caps.hasBiometric == true)
+    #expect(stored.caps.hasSecureEnclave == true)
+    #expect(stored.caps.hasDisplay == true)
+}
+
+@Test func identifyRefreshesDeviceTypeOnSession() async throws {
+    let (coordinator, bleServer, keychain, _) = makeTestCoordinator()
+    let companion = CompanionSimulator()
+    // Register as PHONE
+    try register(companion, in: keychain, deviceType: .phone)
+
+    try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
+
+    // The session should have deviceType=phone (from identify)
+    // We can't directly inspect the private sessions dict, but we can verify
+    // that auth works (which requires an identified session)
+    let result = await coordinator.authenticateFromPAM(user: "u", service: "sudo", pid: 1, timeout: 1.0)
+    // It should not be "no_companion_connected" — the device is identified
+    #expect(result.reason != "no_companion_connected")
+}
+
+@Test func watchWithoutSepIsRejectedFromDirectChallengeResponse() async throws {
+    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let companion = CompanionSimulator(deviceName: "Apple Watch")
+
+    // Register as WATCH without secure enclave
+    try register(companion, in: keychain, deviceType: .watch, caps: TBDeviceCapabilities.with {
+        $0.hasBiometric_p = false
+        $0.hasSecureEnclave_p = false  // No SEP — must delegate to phone
+        $0.hasDisplay_p = true
+        $0.hasButton_p = true
+        $0.latencyClass = 1
+    })
+
+    try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
+
+    // Issue a challenge and have the watch respond directly
+    async let authResult = coordinator.authenticateFromPAM(user: "u", service: "sudo", pid: 1, timeout: 3.0)
+    try await Task.sleep(nanoseconds: 150_000_000)
+
+    guard let challenge = bleServer.sentChallenges.last else {
+        Issue.record("No challenge was sent")
+        return
+    }
+
+    // Watch responds directly (violating delegation rule)
+    let response = try companion.respondToChallenge(challenge.data)
+    bleServer.simulateResponse(response, from: companion.centralID)
+
+    let result = await authResult
+    // The watch's direct response should be rejected
+    #expect(result.success == false)
+
+    // Audit log should show the delegation violation
+    let entries = try await auditLog.readEntries()
+    #expect(entries.contains { $0.result == "FAILED_WATCH_DELEGATION_VIOLATION" })
+}
+
+@Test func watchWithSepCanRespondDirectly() async throws {
+    let (coordinator, bleServer, keychain, auditLog) = makeTestCoordinator()
+    let companion = CompanionSimulator(deviceName: "Apple Watch Ultra")
+
+    // Register as WATCH WITH secure enclave (e.g. Apple Watch Ultra has SEP)
+    try register(companion, in: keychain, deviceType: .watch, caps: TBDeviceCapabilities.with {
+        $0.hasBiometric_p = true
+        $0.hasSecureEnclave_p = true  // Has SEP — can sign directly
+        $0.hasDisplay_p = true
+        $0.hasButton_p = true
+        $0.latencyClass = 1
+    })
+
+    try await fullyConnect(companion: companion, to: coordinator, via: bleServer)
+
+    // Issue a challenge and have the watch respond directly
+    async let authResult = coordinator.authenticateFromPAM(user: "u", service: "sudo", pid: 1, timeout: 3.0)
+    try await Task.sleep(nanoseconds: 150_000_000)
+
+    guard let challenge = bleServer.sentChallenges.last else {
+        Issue.record("No challenge was sent")
+        return
+    }
+
+    // Watch responds directly — should be allowed since it has SEP
+    let response = try companion.respondToChallenge(challenge.data)
+    bleServer.simulateResponse(response, from: companion.centralID)
+
+    let result = await authResult
+    #expect(result.success == true)
+
+    // No delegation violation in audit log
+    let entries = try await auditLog.readEntries()
+    #expect(!entries.contains { $0.result == "FAILED_WATCH_DELEGATION_VIOLATION" })
+}
