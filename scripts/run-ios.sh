@@ -46,7 +46,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 SCHEME="TouchBridge"
-BUNDLE_ID="dev.touchbridge.companion"
+BUNDLE_ID="dev.touchbridge.ios-companion"
 DEFAULT_SIM="iPhone 16"
 
 # --- list devices and exit if --list ---
@@ -81,8 +81,8 @@ if command -v xcrun &>/dev/null; then
     # Extract the UDID (UUID format) from the line
     if [[ "$line" =~ ([0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}) ]]; then
       udid="${BASH_REMATCH[1]}"
-      # Check if the line contains "available" in the state column
-      if echo "$line" | grep -q "available"; then
+      # Check if the line contains "available" or "connected" in the state column
+      if echo "$line" | grep -qE "available|connected"; then
         # Extract the name (first field before the hostname)
         PHYSICAL_NAME="$(echo "$line" | awk '{print $1}')"
         PHYSICAL_UDID="$udid"
@@ -195,6 +195,7 @@ if $DO_BUILD; then
     -configuration Debug \
     -destination "$DESTINATION" \
     -derivedDataPath build/DerivedData \
+    -allowProvisioningUpdates \
     build 2>&1 | tail -5)
 fi
 

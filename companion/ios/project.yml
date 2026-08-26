@@ -58,11 +58,13 @@ targets:
       base:
         CODE_SIGN_ENTITLEMENTS: TouchBridge/TouchBridge.entitlements
         INFOPLIST_FILE: TouchBridge/Resources/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: dev.touchbridge.companion
+        PRODUCT_BUNDLE_IDENTIFIER: dev.touchbridge.ios-companion
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: false
+        DEVELOPMENT_TEAM: "TFQH3ZAL97"
+        CODE_SIGN_STYLE: Automatic
       configs:
         Debug:
           CODE_SIGN_IDENTITY: "Apple Development"
@@ -76,6 +78,6 @@ targets:
       - path: TouchBridgeWatch
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.touchbridge.companion.watchapp
-        INFOPLIST_KEY_WKCompanionAppBundleIdentifier: dev.touchbridge.companion
+        PRODUCT_BUNDLE_IDENTIFIER: dev.touchbridge.ios-companion.watchapp
+        INFOPLIST_KEY_WKCompanionAppBundleIdentifier: dev.touchbridge.ios-companion
         SWIFT_VERSION: "5.9"
