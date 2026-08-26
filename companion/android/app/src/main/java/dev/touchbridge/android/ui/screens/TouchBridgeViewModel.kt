@@ -10,6 +10,7 @@ import dev.touchbridge.android.core.BLEClient
 import dev.touchbridge.android.core.ChallengeData
 import dev.touchbridge.android.core.ChallengeHandler
 import dev.touchbridge.android.core.KeystoreManager
+import dev.touchbridge.android.core.WireFormat
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -258,10 +259,12 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
             statusMessage = "Connected — session encrypted"
         )
 
-        // After ECDH, send identify so the daemon recognizes this device
-        // without requiring full re-pairing on reconnect.
-        // The identify includes a signature proving possession of the paired
-        // private key — the daemon verifies it against the pinned public key.
+        // After ECDH, send an encrypted identify so the daemon recognizes this
+        // device without requiring full re-pairing on reconnect. The identify
+        // includes a signature proving possession of the paired private key.
+        //
+        // The daemon expects: [version][type=6] + AES-GCM-encrypted(Identify protobuf)
+        // matching the iOS CompanionCoordinator.sendIdentify flow.
         val deviceID = getDeviceID()
         val deviceName = android.os.Build.MODEL
         if (deviceID != null) {
@@ -270,13 +273,20 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
                 // data = the daemon's ephemeral public key (X9.62 uncompressed).
                 val signedMessage = deviceID.toByteArray() + data
                 val signature = keystoreManager.sign(signedMessage, Constants.SIGNING_KEY_ALIAS)
-                bleClient.sendIdentify(deviceID, deviceName, signature)
-                Log.i("TouchBridgeVM", "Sent identify: $deviceID ($deviceName) — signature included")
+
+                // Build the Identify protobuf, encrypt with session key, add wire header.
+                val msg = dev.touchbridge.android.proto.Identify.newBuilder()
+                    .setDeviceId(deviceID)
+                    .setDeviceName(deviceName)
+                    .setSignature(com.google.protobuf.ByteString.copyFrom(signature))
+                    .setDeviceType(dev.touchbridge.android.proto.DeviceType.PHONE)
+                    .build()
+                val encrypted = challengeHandler.encrypt(msg.toByteArray())
+                val framed = WireFormat.encode(WireFormat.TYPE_IDENTIFY, encrypted)
+                bleClient.sendPairingData(framed)
+                Log.i("TouchBridgeVM", "Sent identify: $deviceID ($deviceName) — encrypted, signature included")
             } catch (e: Exception) {
-                Log.e("TouchBridgeVM", "Failed to sign identify: ${e.message}", e)
-                // Send without signature — daemon will reject, but connection stays alive.
-                // The user may need to re-pair.
-                bleClient.sendIdentify(deviceID, deviceName, ByteArray(0))
+                Log.e("TouchBridgeVM", "Failed to send identify: ${e.message}", e)
             }
         }
     }

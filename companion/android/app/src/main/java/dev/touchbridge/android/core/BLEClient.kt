@@ -48,6 +48,13 @@ class BLEClient(private val context: Context) {
     private var isWritingDescriptor = false
     private var pendingNotifyCount = 0
 
+    // Characteristic write queue — Android BLE allows only one outstanding
+    // writeCharacteristic at a time. Calls that arrive while a write is in
+    // progress are queued and flushed in onCharacteristicWrite.
+    private data class PendingWrite(val char: BluetoothGattCharacteristic, val payload: ByteArray)
+    private val writeQueue = java.util.ArrayDeque<PendingWrite>()
+    private var isWriting = false
+
     // Discovered characteristics
     private var sessionKeyChar: BluetoothGattCharacteristic? = null
     private var challengeChar: BluetoothGattCharacteristic? = null
@@ -158,15 +165,52 @@ class BLEClient(private val context: Context) {
     // MARK: - Write Operations
 
     /**
+     * Queue a characteristic write. Android BLE allows only one outstanding
+     * writeCharacteristic at a time — if a write is already in progress, the
+     * new write is queued and flushed when onCharacteristicWrite fires.
+     */
+    private fun queueWrite(char: BluetoothGattCharacteristic, payload: ByteArray): Boolean {
+        val g = gatt ?: return false
+        if (isWriting) {
+            writeQueue.add(PendingWrite(char, payload))
+            Log.i(TAG, "Write queued (${payload.size} bytes) — another write in progress")
+            return true
+        }
+        char.value = payload
+        isWriting = true
+        val ok = g.writeCharacteristic(char)
+        if (!ok) {
+            isWriting = false
+            Log.e(TAG, "writeCharacteristic failed immediately (${payload.size} bytes)")
+        }
+        return ok
+    }
+
+    private fun processWriteQueue() {
+        if (isWriting || writeQueue.isEmpty()) return
+        val g = gatt ?: return
+        val pending = writeQueue.poll() ?: return
+        pending.char.value = pending.payload
+        isWriting = true
+        val ok = g.writeCharacteristic(pending.char)
+        if (!ok) {
+            isWriting = false
+            Log.e(TAG, "Queued write failed (${pending.payload.size} bytes)")
+            // Try the next one
+            processWriteQueue()
+        } else {
+            Log.i(TAG, "Flushed queued write (${pending.payload.size} bytes)")
+        }
+    }
+
+    /**
      * Send a challenge response (type 4) — encrypted payload with wire format header.
      * The caller provides the already-encrypted payload; we prepend the header.
      */
     fun sendResponse(encryptedPayload: ByteArray): Boolean {
         val char = responseChar ?: return false
-        val g = gatt ?: return false
         val framed = WireFormat.encode(WireFormat.TYPE_CHALLENGE_RESPONSE, encryptedPayload)
-        char.value = framed
-        return g.writeCharacteristic(char)
+        return queueWrite(char, framed)
     }
 
     /**
@@ -175,19 +219,15 @@ class BLEClient(private val context: Context) {
      */
     fun sendSessionKey(data: ByteArray): Boolean {
         val char = sessionKeyChar ?: return false
-        val g = gatt ?: return false
-        char.value = data
-        return g.writeCharacteristic(char)
+        return queueWrite(char, data)
     }
 
     /**
      * Send pairing data (type 1) — pair request with wire format header.
      */
     fun sendPairingData(payload: ByteArray): Boolean {
-        val char = pairingChar ?: return false
-        val g = gatt ?: return false
-        char.value = payload
-        return g.writeCharacteristic(char)
+        val char = pairingChar ?: run { Log.e(TAG, "sendPairingData: pairingChar is null"); return false }
+        return queueWrite(char, payload)
     }
 
     /**
@@ -395,9 +435,12 @@ class BLEClient(private val context: Context) {
             characteristic: BluetoothGattCharacteristic,
             status: Int
         ) {
+            isWriting = false
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 Log.e(TAG, "Write failed for ${characteristic.uuid}: $status")
             }
+            // Flush any pending writes that were queued while this write was in progress.
+            processWriteQueue()
         }
     }
 
