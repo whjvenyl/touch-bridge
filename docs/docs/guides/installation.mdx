@@ -10,7 +10,7 @@ description: Build and install TouchBridge from source
 | Component | Requirement |
 |-----------|-----------|
 | macOS | 13.0 (Ventura) or newer |
-| Xcode | 15.0 or newer (for menubar app) |
+| Xcode | 15.0 or newer |
 | Swift | 5.9 or newer |
 | Bluetooth | BLE support (all modern Macs) |
 | Companion | iOS 16+, Android 8+ |
@@ -26,7 +26,7 @@ sudo bash scripts/install.sh
 ```
 
 The install script:
-- Builds the daemon (`touchbridged`) and CLI (`touchbridge-test`)
+- Generates protobuf code and builds the daemon (`touchbridge`)
 - Builds the PAM module as a universal binary
 - Ad-hoc signs the PAM module
 - Installs to `/usr/local/bin/` and `/usr/local/lib/pam/`
@@ -41,8 +41,9 @@ The install script:
 4. Approve the biometric prompt on your phone
 
 Alternatively, use the CLI:
+
 ```bash
-touchbridge-test pair
+touchbridge pair
 ```
 
 ## Test it

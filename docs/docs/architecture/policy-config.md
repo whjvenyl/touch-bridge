@@ -25,22 +25,22 @@ TouchBridge supports per-action configurable authentication policy. Each auth su
 
 ```bash
 # Show current policy
-touchbridge-test config show
+touchbridge config show
 
 # Set a surface policy
-touchbridge-test config set --surface screensaver --mode biometric_required
+touchbridge config set --surface screensaver --mode biometric_required
 
 # Set proximity session with TTL
-touchbridge-test config set --surface browser_autofill --mode proximity_session --ttl 15
+touchbridge config set --surface browser_autofill --mode proximity_session --ttl 15
 
 # Set global auth timeout
-touchbridge-test config set --timeout 20
+touchbridge config set --timeout 20
 
 # Set RSSI proximity threshold
-touchbridge-test config set --rssi -60
+touchbridge config set --rssi -60
 
 # Reset to defaults
-touchbridge-test config reset
+touchbridge config reset
 ```
 
 ### Plist

@@ -20,7 +20,6 @@ Use your phone's fingerprint or face to authenticate on your Mac. No extra hardw
   - [Android (Fingerprint / Face)](#android-fingerprint--face)
   - [Apple Watch](#apple-watch)
   - [Wear OS](#wear-os-android-watch)
-  - [Any phone browser (no app)](#any-phone-browser-no-app-install)
   - [No phone — simulator mode](#no-phone--simulator-mode)
 - [Test It Works](#test-it-works)
 - [Configuration](#configuration)
@@ -47,7 +46,6 @@ Use your phone's fingerprint or face to authenticate on your Mac. No extra hardw
 | Android (Android 9+) | Fingerprint / Face via BLE — most secure |
 | Apple Watch (watchOS 9+) | Tap to approve on your wrist |
 | Wear OS watch (Wear OS 3+) | Tap to approve on your wrist |
-| Any phone with a browser | One-tap web approval — no app install |
 | No device | Simulator mode for testing |
 
 ---
@@ -64,8 +62,7 @@ brew install --cask touchbridge
 ```
 
 This installs:
-- `touchbridged` — the daemon that runs in the background
-- `touchbridge-test` — CLI for pairing, logs, and config
+- `touchbridge` — the daemon and CLI (serve, pair, logs, config, list-devices, challenge)
 - `pam_touchbridge.so` — the PAM module that hooks into `sudo`
 - The LaunchAgent that auto-starts the daemon at login
 
@@ -101,8 +98,8 @@ Use this if you want to inspect or modify the code.
 **Prerequisites:**
 
 ```bash
-# Install Xcode Command Line Tools (if not already installed)
 xcode-select --install
+brew install protobuf swift-protobuf xcodegen
 ```
 
 **Build and install:**
@@ -111,27 +108,24 @@ xcode-select --install
 git clone https://github.com/HMAKT99/UnTouchID.git
 cd UnTouchID
 
-# Build daemon and PAM module
-cd daemon && swift build -c release && cd ..
-make -C mac/pam
-
-# Install everything (requires sudo for PAM and /usr/local)
+# Build everything and install (requires sudo for PAM and /usr/local)
 sudo bash scripts/install.sh
 ```
 
 The installer will:
-1. Check your macOS version
-2. Copy binaries to `/usr/local/bin/` and `/usr/local/lib/pam/`
-3. Create `~/Library/Application Support/TouchBridge/` and `~/Library/Logs/TouchBridge/`
-4. Show you the proposed PAM change and ask for confirmation before applying it
-5. Install the LaunchAgent so the daemon starts automatically at login
+1. Generate protobuf code and build the daemon via Xcode
+2. Build the PAM module as a universal binary
+3. Copy binaries to `/usr/local/bin/` and `/usr/local/lib/pam/`
+4. Create `~/Library/Application Support/TouchBridge/` and `~/Library/Logs/TouchBridge/`
+5. Show you the proposed PAM change and ask for confirmation before applying it
+6. Install the LaunchAgent so the daemon starts automatically at login
 
 **Verify the installation:**
 
 ```bash
 # Daemon is installed
-which touchbridged
-# → /usr/local/bin/touchbridged
+which touchbridge
+# → /usr/local/bin/touchbridge
 
 # PAM module is a universal binary (arm64 + x86_64)
 file /usr/local/lib/pam/pam_touchbridge.so
@@ -162,8 +156,9 @@ Pick the device you want to use for authentication.
 You need **Xcode 15+** on your Mac.
 
 ```bash
-brew install xcodegen       # if not already installed
-cd companion
+brew install xcodegen protobuf swift-protobuf
+bash protocol/generate.sh
+cd companion/ios
 xcodegen generate
 open TouchBridge.xcodeproj
 ```
@@ -179,7 +174,7 @@ In Xcode:
 
 On your Mac:
 ```bash
-touchbridge-test pair
+touchbridge pair
 ```
 
 This opens a QR code on your Mac and also prints the pairing JSON, for example:
@@ -231,7 +226,7 @@ You need **Android Studio** installed.
 
 On your Mac:
 ```bash
-touchbridge-test pair
+touchbridge pair
 ```
 
 On your Android phone:
@@ -294,44 +289,6 @@ Same as Apple Watch — vibrate, show request, tap Approve.
 
 ---
 
-### Any Phone Browser (no app install)
-
-**Best for:** Quick setup, guests, or any phone with a browser. No app required.
-
-> Uses HTTP on your local network. For trusted networks only. Not recommended on public Wi-Fi.
-
-```bash
-# Stop the normal daemon first
-launchctl bootout gui/$(id -u)/dev.touchbridge.daemon 2>/dev/null
-
-# Start in web companion mode
-touchbridged serve --web
-```
-
-When you run `sudo echo test` in another terminal, the daemon prints:
-
-```
-╔══════════════════════════════════════════════════╗
-║  TouchBridge — Web Authentication               ║
-╠══════════════════════════════════════════════════╣
-║                                                  ║
-║  Open this URL on any phone:                     ║
-║                                                  ║
-║  http://192.168.1.42:7070/auth/a3f9b2c1...      ║
-║                                                  ║
-║  Request: sudo                                   ║
-║  User:    you                                    ║
-║                                                  ║
-║  Expires in 60 seconds                           ║
-╚══════════════════════════════════════════════════╝
-```
-
-Open the URL on any phone → tap **Approve** → `sudo` succeeds.
-
-Both Mac and phone must be on the **same Wi-Fi network**.
-
----
-
 ### No Phone — Simulator Mode
 
 **Best for:** Testing the full flow without any device, CI pipelines, or demos.
@@ -343,7 +300,7 @@ Auto-approves all auth requests using software keys.
 launchctl bootout gui/$(id -u)/dev.touchbridge.daemon 2>/dev/null
 
 # Start simulator
-touchbridged serve --simulator
+touchbridge serve --simulator
 ```
 
 In another terminal:
@@ -354,7 +311,7 @@ sudo echo 'It works!'
 
 For interactive mode where you manually approve each request:
 ```bash
-touchbridged serve --interactive
+touchbridge serve --interactive
 ```
 
 To return to normal mode:
@@ -376,15 +333,15 @@ sudo echo 'TouchBridge works!'
 ### Check which devices are paired
 
 ```bash
-touchbridge-test list-devices
+touchbridge list-devices
 ```
 
 ### View the auth log
 
 ```bash
-touchbridge-test logs            # recent events
-touchbridge-test logs --summary  # analytics dashboard
-touchbridge-test logs --failures # failed attempts only
+touchbridge logs            # recent events
+touchbridge logs --summary  # analytics dashboard
+touchbridge logs --failures # failed attempts only
 ```
 
 ### Test the fallback (phone unreachable)
@@ -403,7 +360,7 @@ You are never locked out. If your phone is unavailable, `sudo` falls back to pas
 ### View current settings
 
 ```bash
-touchbridge-test config show
+touchbridge config show
 ```
 
 Example output:
@@ -424,16 +381,16 @@ Surface Policies:
 
 ```bash
 # Change how long to wait for phone response (default: 15s)
-touchbridge-test config set --timeout 20
+touchbridge config set --timeout 20
 
 # Require biometric every time for screensaver (more secure)
-touchbridge-test config set --surface screensaver --mode biometric_required
+touchbridge config set --surface screensaver --mode biometric_required
 
 # Use proximity session for sudo — no Face ID prompt if phone is nearby
-touchbridge-test config set --surface sudo --mode proximity_session --ttl 10
+touchbridge config set --surface sudo --mode proximity_session --ttl 10
 
 # Reset all settings to defaults
-touchbridge-test config reset
+touchbridge config reset
 ```
 
 ### Auto-lock when phone walks away
@@ -441,7 +398,7 @@ touchbridge-test config reset
 Lock your Mac automatically when your phone goes out of BLE range:
 
 ```bash
-touchbridged serve --auto-lock
+touchbridge serve --auto-lock
 ```
 
 If your phone disconnects for 30 seconds, the screen locks. Walk back in range — everything resumes.
@@ -484,7 +441,7 @@ If nothing prints, re-run: `sudo bash /usr/local/share/touchbridge/patch-pam.sh`
 
 **4. Check recent auth events:**
 ```bash
-touchbridge-test logs --count 5
+touchbridge logs --count 5
 ```
 
 ---
@@ -493,8 +450,9 @@ touchbridge-test logs --count 5
 
 Start the daemon manually to see any errors:
 ```bash
-touchbridged serve --simulator
+touchbridge serve --simulator
 ```
+
 Then check the output.
 
 ---
@@ -521,18 +479,7 @@ sudo chmod 444 /usr/local/lib/pam/pam_touchbridge.so
 1. Bluetooth must be enabled on both Mac and iPhone
 2. Keep the TouchBridge app open on your iPhone (or ensure Background App Refresh is on)
 3. Stay within ~5 metres of your Mac
-4. If connection is stale, re-pair: `touchbridge-test pair`
-
----
-
-### Web companion URL not reachable from phone
-
-1. Mac and phone must be on the **same Wi-Fi network**
-2. Test locally first: `curl http://localhost:7070/`
-3. If blocked by a firewall, try a different port:
-   ```bash
-   touchbridged serve --web --web-port 8080
-   ```
+4. If connection is stale, re-pair: `touchbridge pair`
 
 ---
 
@@ -566,7 +513,7 @@ This:
 2. Removes the PAM hook (deletes `sudo_local`, or restores `sudo`/`screensaver`
    from backups) **before** removing the module — so `sudo` is never left
    pointing at a deleted module
-3. Removes `/usr/local/bin/touchbridged` and the PAM module
+3. Removes `/usr/local/bin/touchbridge` and the PAM module
 
 Your Mac returns to normal password-only authentication immediately.
 
@@ -578,4 +525,4 @@ Your Mac returns to normal password-only authentication immediately.
 
 ---
 
-*Security model: [SECURITY.md](../SECURITY.md) · Architecture: [architecture.md](architecture.md) · Limitations: [limitations.md](limitations.md)*
+*Security model: [security-model.md](security-model.md) · Architecture: [architecture.md](architecture.md) · Limitations: [limitations.md](limitations.md)*

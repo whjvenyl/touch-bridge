@@ -64,12 +64,23 @@ info "Installing for user: $ACTUAL_USER"
 
 # --- Build ---
 
+# Generate protobuf code if tools are available
+if command -v protoc-gen-swift &>/dev/null; then
+    info "Generating protobuf code..."
+    sudo -u "$ACTUAL_USER" bash "$PROJECT_DIR/protocol/generate.sh" 2>&1 | tail -1
+else
+    warn "protoc-gen-swift not found — using existing generated files."
+    warn "Install with: brew install protobuf swift-protobuf"
+fi
+
 info "Building daemon..."
-cd "$PROJECT_DIR/mac/daemon"
-sudo -u "$ACTUAL_USER" swift build -c release 2>&1 | tail -1
-DAEMON_BUILD="$PROJECT_DIR/mac/daemon/.build/release/touchbridge"
+cd "$PROJECT_DIR/mac"
+sudo -u "$ACTUAL_USER" xcodegen generate 2>&1 | tail -1
+DAEMON_DERIVED="$PROJECT_DIR/mac/build"
+sudo -u "$ACTUAL_USER" xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge -configuration Release -derivedDataPath "$DAEMON_DERIVED" build 2>&1 | tail -3
+DAEMON_BUILD="$DAEMON_DERIVED/Build/Products/Release/touchbridge"
 if [ ! -f "$DAEMON_BUILD" ]; then
-    error "Daemon build failed — binary not found."
+    error "Daemon build failed — binary not found at $DAEMON_BUILD"
     exit 1
 fi
 info "Daemon built successfully."

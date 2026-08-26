@@ -7,6 +7,31 @@ description: How to build each component of TouchBridge
 
 TouchBridge has multiple components with different build systems. This guide covers each one.
 
+## Prerequisites
+
+```bash
+xcode-select --install
+brew install protobuf swift-protobuf xcodegen
+```
+
+## First-time setup
+
+Generate the protobuf Swift code (gitignored, required before any build):
+
+```bash
+bash protocol/generate.sh
+```
+
+## All-in-one build
+
+```bash
+bash scripts/build-all.sh           # debug build
+bash scripts/build-all.sh release   # release build
+bash scripts/build-all.sh test      # build + run tests
+```
+
+This builds protocol, daemon, PAM, and menubar app. It does not build companion apps.
+
 ## Protocol package (Swift)
 
 ```bash
@@ -15,28 +40,22 @@ swift build
 swift test
 ```
 
-## Daemon (Swift)
+## Daemon (Xcode)
 
 ```bash
-cd mac/daemon
-swift build
-swift test
+cd mac
+xcodegen generate
+xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge build
+xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge test
 ```
 
 ### Run tests by suite
 
 ```bash
-swift test --filter ChallengeManager
-swift test --filter Keychain
-swift test --filter SocketServer
-swift test --filter PolicyEngine
-swift test --filter PAMIntegration
-```
-
-### Build release
-
-```bash
-swift build -c release
+xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge test \
+  -only-testing:TouchBridgeCoreTests/ChallengeManagerTests
+xcodebuild -project TouchBridge.xcodeproj -scheme touchbridge test \
+  -only-testing:TouchBridgeCoreTests/KeychainStoreTests
 ```
 
 ## PAM module (C, universal binary)
@@ -50,19 +69,27 @@ Produces `mac/pam/pam_touchbridge.so` (arm64 + x86_64).
 ## Menubar app (Xcode)
 
 ```bash
-cd mac/menubar
+cd mac
 xcodegen generate
-xcodebuild -project TouchBridgeMenu.xcodeproj -scheme TouchBridgeMenu -configuration Debug build
+xcodebuild -project TouchBridge.xcodeproj -scheme TouchBridgeMenu build
 ```
 
-Requires [XcodeGen](https://github.com/yonaskolb/XcodeGen):
-```bash
-brew install xcodegen
-```
+The menubar app auto-bundles the daemon binary and PAM module into its Resources.
 
 ## iOS companion (Xcode)
 
-Open `companion/ios/TouchBridge.xcodeproj` in Xcode and build.
+```bash
+cd companion/ios
+xcodegen generate
+open TouchBridge.xcodeproj
+```
+
+Build from Xcode or command line:
+
+```bash
+xcodebuild -project TouchBridge.xcodeproj -scheme TouchBridge \
+  -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build
+```
 
 ## Android companion (Gradle)
 
@@ -73,11 +100,3 @@ cd companion/android
 ```
 
 Requires Android Studio or Android SDK with build tools.
-
-## All-in-one build script
-
-```bash
-bash scripts/build-all.sh
-```
-
-This builds protocol, daemon, PAM, and menubar app. It does not build companion apps (they require Xcode/Android Studio).

@@ -12,7 +12,7 @@ description: TouchBridge Architecture
 │                    macOS                             │
 │                                                      │
 │  ┌──────────┐    Unix Socket    ┌───────────────┐   │
-│  │ PAM      │ ───────────────→  │ touchbridged  │   │
+│  │ PAM      │ ───────────────→  │ touchbridge   │   │
 │  │ Module   │                   │ (daemon)      │   │
 │  └──────────┘                   │               │   │
 │                                 │ ┌───────────┐ │   │

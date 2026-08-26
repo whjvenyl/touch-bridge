@@ -1,15 +1,20 @@
 {
   "name": "docs",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "TouchBridge documentation site (Blume)",
+  "private": true,
+  "type": "commonjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "blume dev",
+    "build": "blume build",
+    "preview": "blume preview",
+    "check": "blume check",
+    "validate": "blume validate",
+    "audit": "blume audit"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "license": "MIT",
   "dependencies": {
     "blume": "^1.5.3"
   }
