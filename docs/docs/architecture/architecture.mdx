@@ -11,20 +11,13 @@ sidebar:
 ## Component Overview
 
 ```mermaid
-flowchart LR
-  subgraph macOS
-    PAM[PAM Module] -->|Unix Socket| Daemon[touchbridge daemon]
-    Daemon --> SocketServer
-    Daemon --> ChallengeManager
-    Daemon --> BLEServer
-  end
-  BLEServer -->|BLE| BLEClient
-
-  subgraph iPhone
-    BLEClient --> ChallengeHandler
-    ChallengeHandler --> LAContext[Face ID / Touch ID]
-    ChallengeHandler --> SE[Secure Enclave]
-  end
+flowchart TD
+  PAM[PAM Module] -->|Unix Socket| Daemon[touchbridge daemon]
+  Daemon -->|BLE| Companion[Companion App]
+  Companion --> Biometric[Face ID / Fingerprint]
+  Companion -->|ECDSA P-256| SE[Secure Enclave]
+  Companion -->|Signature| Daemon
+  Daemon -->|PAM_SUCCESS / PAM_AUTH_ERR| PAM
 ```
 
 ## Data Flow: sudo authentication

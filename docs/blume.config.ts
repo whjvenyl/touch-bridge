@@ -16,8 +16,20 @@ export default defineConfig({
     tabs: [
       { label: "Docs", path: "/", icon: "book-open" },
       { label: "CLI", path: "/cli", icon: "terminal" },
+      { label: "API", path: "/reference", icon: "code" },
       { label: "Changelog", path: "/changelog", href: "/changelog", icon: "history" },
     ],
+  },
+
+  openapi: {
+    enabled: true,
+    spec: "./docs/api/socket-protocol.json",
+    route: "/reference",
+  },
+
+  ai: {
+    llmsTxt: true,
+    openInChat: ["claude", "chatgpt", "cursor"],
   },
 
   seo: {

@@ -1,0 +1,271 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "TouchBridge Socket Protocol",
+    "version": "1.0.0",
+    "description": "JSON request/response protocol over a Unix domain socket between the PAM module, menu bar app, and the touchbridge daemon. Socket path: ~/Library/Application Support/TouchBridge/daemon.sock"
+  },
+  "servers": [
+    {
+      "url": "unix:///daemon.sock",
+      "description": "Unix domain socket"
+    }
+  ],
+  "paths": {
+    "/authenticate": {
+      "post": {
+        "tags": ["PAM"],
+        "summary": "Authenticate a user",
+        "description": "Sent by the PAM module to request biometric authentication for a user/session.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AuthRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authentication result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthResponse" },
+                "examples": {
+                  "success": {
+                    "value": { "result": "success" }
+                  },
+                  "failure": {
+                    "value": { "result": "failure", "reason": "timeout" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status": {
+      "post": {
+        "tags": ["Control"],
+        "summary": "Get daemon status",
+        "description": "Returns paired devices, connected devices, advertising state, and pairing state.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/StatusRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Daemon status",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StatusResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pair": {
+      "post": {
+        "tags": ["Control"],
+        "summary": "Start pairing",
+        "description": "Starts a pairing session. Returns QR payload JSON when a companion connects and pairing completes.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PairRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pairing result with QR data",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PairResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cancelPairing": {
+      "post": {
+        "tags": ["Control"],
+        "summary": "Cancel active pairing",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CancelPairingRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pairing cancelled",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SimpleResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/unpair": {
+      "post": {
+        "tags": ["Control"],
+        "summary": "Unpair a device",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UnpairRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Device unpaired",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SimpleResponse" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BaseRequest": {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["authenticate", "status", "pair", "cancelPairing", "unpair"]
+          },
+          "user": { "type": "string", "description": "Username (authenticate only)" },
+          "service": { "type": "string", "description": "PAM service name (authenticate only)" },
+          "pid": { "type": "integer", "description": "Process ID (authenticate only)" },
+          "deviceID": { "type": "string", "description": "Device ID (unpair only)" }
+        }
+      },
+      "AuthRequest": {
+        "type": "object",
+        "required": ["action", "user", "service"],
+        "properties": {
+          "action": { "type": "string", "enum": ["authenticate"] },
+          "user": { "type": "string" },
+          "service": { "type": "string" },
+          "pid": { "type": "integer" }
+        }
+      },
+      "StatusRequest": {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "action": { "type": "string", "enum": ["status"] }
+        }
+      },
+      "PairRequest": {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "action": { "type": "string", "enum": ["pair"] }
+        }
+      },
+      "CancelPairingRequest": {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "action": { "type": "string", "enum": ["cancelPairing"] }
+        }
+      },
+      "UnpairRequest": {
+        "type": "object",
+        "required": ["action", "deviceID"],
+        "properties": {
+          "action": { "type": "string", "enum": ["unpair"] },
+          "deviceID": { "type": "string" }
+        }
+      },
+      "SimpleResponse": {
+        "type": "object",
+        "required": ["result"],
+        "properties": {
+          "result": { "type": "string", "enum": ["success", "failure"] },
+          "reason": { "type": "string" }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "required": ["result"],
+        "properties": {
+          "result": { "type": "string", "enum": ["success", "failure"] },
+          "reason": { "type": "string", "description": "Failure reason (timeout, denied, daemon_not_running, etc.)" }
+        }
+      },
+      "StatusResponse": {
+        "type": "object",
+        "required": ["result", "status"],
+        "properties": {
+          "result": { "type": "string", "enum": ["success"] },
+          "status": { "$ref": "#/components/schemas/DaemonStatus" }
+        }
+      },
+      "PairResponse": {
+        "type": "object",
+        "required": ["result"],
+        "properties": {
+          "result": { "type": "string", "enum": ["success", "failure"] },
+          "pairingData": { "type": "string", "description": "QR payload JSON (macName, serviceUUID, pairingToken, macID)" }
+        }
+      },
+      "DaemonStatus": {
+        "type": "object",
+        "required": ["pairedDevices", "connectedDevices", "isAdvertising", "isPairingActive"],
+        "properties": {
+          "pairedDevices": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PairedDevice" }
+          },
+          "connectedDevices": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ConnectedDevice" }
+          },
+          "isAdvertising": { "type": "boolean" },
+          "isPairingActive": { "type": "boolean" }
+        }
+      },
+      "PairedDevice": {
+        "type": "object",
+        "required": ["deviceID", "displayName", "pairedAt", "isConnected"],
+        "properties": {
+          "deviceID": { "type": "string" },
+          "displayName": { "type": "string" },
+          "pairedAt": { "type": "string", "format": "date-time" },
+          "isConnected": { "type": "boolean" }
+        }
+      },
+      "ConnectedDevice": {
+        "type": "object",
+        "required": ["centralID", "identified"],
+        "properties": {
+          "centralID": { "type": "string" },
+          "deviceID": { "type": "string", "nullable": true },
+          "identified": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}
