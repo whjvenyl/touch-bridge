@@ -192,6 +192,10 @@ class BLEClient(private val context: Context) {
     /**
      * Send an identify message (type 6) — after ECDH on reconnect.
      * The signature proves possession of the paired private key.
+     *
+     * Sent on the pairing characteristic (not response) because the daemon
+     * routes Identify messages through didReceivePairingData. The response
+     * characteristic is for ChallengeResponse/Error only.
      */
     fun sendIdentify(
         deviceID: String,
@@ -199,7 +203,7 @@ class BLEClient(private val context: Context) {
         signature: ByteArray,
         deviceType: dev.touchbridge.android.proto.DeviceType = dev.touchbridge.android.proto.DeviceType.PHONE
     ): Boolean {
-        val char = responseChar ?: return false
+        val char = pairingChar ?: return false
         val g = gatt ?: return false
         val framed = WireFormat.buildIdentify(deviceID, deviceName, signature, deviceType)
         char.value = framed
@@ -284,9 +288,13 @@ class BLEClient(private val context: Context) {
                 return
             }
 
-            val service = gatt.getService(Constants.SERVICE_UUID)
+            // The daemon generates a random service UUID at first run and embeds
+            // it in the QR pairing payload. Use the UUID we scanned for (from the
+            // QR code) to look up the service — not the hardcoded fallback.
+            val serviceUuid = currentScanUuid ?: Constants.SERVICE_UUID
+            val service = gatt.getService(serviceUuid)
             if (service == null) {
-                Log.e(TAG, "TouchBridge service not found")
+                Log.e(TAG, "TouchBridge service not found (looked for $serviceUuid)")
                 return
             }
 
