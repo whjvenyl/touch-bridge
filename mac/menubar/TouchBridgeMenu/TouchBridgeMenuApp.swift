@@ -27,10 +27,12 @@ struct TouchBridgeMenuApp: App {
         }
         .windowResizability(.contentSize)
 
-        // Settings window
-        Settings {
+        // Settings window (using WindowGroup instead of Settings so it works
+        // in a menu bar-only app where there's no app menu for showSettingsWindow:)
+        WindowGroup("TouchBridge Settings", id: "settings") {
             SettingsWindowView(state: appState)
         }
+        .windowResizability(.contentSize)
     }
 
     private var menuBarColor: Color {

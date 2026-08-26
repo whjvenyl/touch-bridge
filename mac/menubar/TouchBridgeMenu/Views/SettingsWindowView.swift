@@ -125,6 +125,7 @@ struct GeneralSettingsView: View {
 
 struct DevicesSettingsView: View {
     @ObservedObject var state: MenuBarState
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 16) {
@@ -143,7 +144,7 @@ struct DevicesSettingsView: View {
 
                         Button("Pair New Device") {
                             state.startPairing()
-                            openPairingWindow()
+                            openWindow(id: "pairing")
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -188,7 +189,7 @@ struct DevicesSettingsView: View {
                     HStack {
                         Button("Pair New Device") {
                             state.startPairing()
-                            openPairingWindow()
+                            openWindow(id: "pairing")
                         }
                         .buttonStyle(.borderedProminent)
                         Spacer()
@@ -207,12 +208,6 @@ struct DevicesSettingsView: View {
             }
         }
         .padding()
-    }
-
-    private func openPairingWindow() {
-        if let url = URL(string: "touchbridge://pairing") {
-            NSWorkspace.shared.open(url)
-        }
     }
 
     private func formatDate(_ date: Date) -> String {

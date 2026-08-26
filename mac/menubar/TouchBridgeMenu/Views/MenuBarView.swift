@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MenuBarView: View {
     @ObservedObject var state: MenuBarState
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -217,7 +218,7 @@ struct MenuBarView: View {
 
             Button {
                 state.startPairing()
-                openPairingWindow()
+                openWindow(id: "pairing")
             } label: {
                 Label("Pair New Device", systemImage: "plus.circle")
                     .font(.subheadline)
@@ -260,7 +261,7 @@ struct MenuBarView: View {
             if state.status == nil && state.isDaemonRunning {
                 Button {
                     state.startPairing()
-                    openPairingWindow()
+                    openWindow(id: "pairing")
                 } label: {
                     Label("Pair New Device", systemImage: "plus.circle")
                 }
@@ -281,7 +282,7 @@ struct MenuBarView: View {
             .padding(.vertical, 4)
 
             Button {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                openWindow(id: "settings")
             } label: {
                 Label("Settings…", systemImage: "gear")
             }
@@ -327,12 +328,6 @@ struct MenuBarView: View {
             return "Waiting for device…"
         }
         return "Connecting…"
-    }
-
-    private func openPairingWindow() {
-        if let url = URL(string: "touchbridge://pairing") {
-            NSWorkspace.shared.open(url)
-        }
     }
 
     private func formatTime(_ iso: String) -> String {
