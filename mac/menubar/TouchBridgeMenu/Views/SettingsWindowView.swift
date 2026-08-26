@@ -21,6 +21,18 @@ struct SettingsWindowView: View {
 struct GeneralSettingsView: View {
     @ObservedObject var state: MenuBarState
     @State private var showUninstallAlert = false
+    @State private var showApplyAlert = false
+
+    // Local pending preferences — the user edits these freely, and they
+    // only become live when "Apply" is clicked. This avoids triggering a
+    // privileged operation on every toggle flip.
+    @State private var pendingSudo: Bool = false
+    @State private var pendingScreensaver: Bool = false
+
+    /// True when the local pending state differs from what's actually applied.
+    private var hasPendingChanges: Bool {
+        pendingSudo != state.sudoEnabled || pendingScreensaver != state.screensaverEnabled
+    }
 
     var body: some View {
         Form {
@@ -65,25 +77,17 @@ struct GeneralSettingsView: View {
             // MARK: - Authentication Surfaces
 
             Section {
-                Toggle(isOn: Binding(
-                    get: { state.sudoEnabled },
-                    set: { newVal in
-                        Task { await state.togglePAMSurface("sudo", enabled: newVal) }
-                    }
-                )) {
+                Toggle(isOn: $pendingSudo) {
                     Label("Use TouchBridge for sudo", systemImage: "terminal")
                 }
                 .toggleStyle(.switch)
+                .disabled(state.isInstalling)
 
-                Toggle(isOn: Binding(
-                    get: { state.screensaverEnabled },
-                    set: { newVal in
-                        Task { await state.togglePAMSurface("screensaver", enabled: newVal) }
-                    }
-                )) {
+                Toggle(isOn: $pendingScreensaver) {
                     Label("Use TouchBridge for screen saver unlock", systemImage: "lock.open")
                 }
                 .toggleStyle(.switch)
+                .disabled(state.isInstalling)
 
                 if state.isInstalling {
                     HStack(spacing: 8) {
@@ -93,11 +97,30 @@ struct GeneralSettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                } else if hasPendingChanges {
+                    HStack {
+                        Button("Apply Changes") {
+                            showApplyAlert = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+
+                        Button("Revert") {
+                            pendingSudo = state.sudoEnabled
+                            pendingScreensaver = state.screensaverEnabled
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
                 }
             } header: {
                 Text("Authentication Surfaces")
             } footer: {
-                Text("Choose which authentication prompts should offer TouchBridge. Your password always remains available as a fallback.")
+                if hasPendingChanges {
+                    Text("Click Apply to confirm. You will be asked for your administrator password to modify PAM configuration.")
+                } else {
+                    Text("Choose which authentication prompts should offer TouchBridge. Your password always remains available as a fallback.")
+                }
             }
 
             // MARK: - Uninstall
@@ -109,6 +132,17 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear {
+            // Sync local state from actual state when the view appears.
+            pendingSudo = state.sudoEnabled
+            pendingScreensaver = state.screensaverEnabled
+        }
+        .onChange(of: state.sudoEnabled) { _, newValue in
+            pendingSudo = newValue
+        }
+        .onChange(of: state.screensaverEnabled) { _, newValue in
+            pendingScreensaver = newValue
+        }
         .alert("Uninstall TouchBridge?", isPresented: $showUninstallAlert) {
             Button("Uninstall", role: .destructive) {
                 Task { await state.uninstallSystem() }
@@ -116,6 +150,24 @@ struct GeneralSettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will remove the daemon, PAM module, and restore your original PAM configs. Paired devices and logs are preserved.")
+        }
+        .alert("Apply Authentication Changes?", isPresented: $showApplyAlert) {
+            Button("Apply", role: .destructive) {
+                Task {
+                    if pendingSudo != state.sudoEnabled {
+                        await state.togglePAMSurface("sudo", enabled: pendingSudo)
+                    }
+                    if pendingScreensaver != state.screensaverEnabled {
+                        await state.togglePAMSurface("screensaver", enabled: pendingScreensaver)
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingSudo = state.sudoEnabled
+                pendingScreensaver = state.screensaverEnabled
+            }
+        } message: {
+            Text("Modifying PAM configuration requires administrator privileges. You will be prompted for your password.")
         }
     }
 }
