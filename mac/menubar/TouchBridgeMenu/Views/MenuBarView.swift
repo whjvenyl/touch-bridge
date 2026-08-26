@@ -61,21 +61,18 @@ struct MenuBarView: View {
     // MARK: - Installed
 
     private var installedView: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
             header
-            Divider()
             daemonSection
             if let status = state.status, !status.pairedDevices.isEmpty {
-                Divider()
                 pairedDevicesSection(status.pairedDevices)
             }
             if !state.recentEvents.isEmpty {
-                Divider()
                 recentActivitySection
             }
-            Divider()
             actionsSection
         }
+        .padding(.bottom, 8)
     }
 
     private var header: some View {
@@ -92,12 +89,15 @@ struct MenuBarView: View {
             }
             Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .glassSurface(cornerRadius: 14)
+        .padding(.horizontal, 10)
+        .padding(.top, 10)
     }
 
     private var daemonSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Circle()
                     .fill(state.isDaemonRunning ? .green : .red)
@@ -133,8 +133,11 @@ struct MenuBarView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .glassSurface(cornerRadius: 14)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
     }
 
     private func linkQualityLabel(_ quality: String) -> String {
@@ -156,13 +159,10 @@ struct MenuBarView: View {
     }
 
     private func pairedDevicesSection(_ devices: [DaemonClient.DaemonStatus.PairedDeviceInfo]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("Paired Devices (\(devices.count))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 2)
 
             ForEach(devices) { device in
                 HStack {
@@ -213,8 +213,7 @@ struct MenuBarView: View {
                     .buttonStyle(.plain)
                     .help("Unpair \(device.displayName)")
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 4)
+                .padding(.vertical, 2)
             }
 
             Button {
@@ -225,19 +224,19 @@ struct MenuBarView: View {
                     .font(.subheadline)
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 4)
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .glassSurface(cornerRadius: 14)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
     }
 
     private var recentActivitySection: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 4) {
             Text("Recent Activity")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
 
             ForEach(state.recentEvents.prefix(5)) { event in
                 HStack {
@@ -251,10 +250,14 @@ struct MenuBarView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 2)
+                .padding(.vertical, 1)
             }
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .glassSurface(cornerRadius: 14)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
     }
 
     private var actionsSection: some View {
@@ -284,6 +287,7 @@ struct MenuBarView: View {
 
             Button {
                 openSettings()
+                NSApplication.shared.deactivate()
             } label: {
                 Label("Settings…", systemImage: "gear")
             }

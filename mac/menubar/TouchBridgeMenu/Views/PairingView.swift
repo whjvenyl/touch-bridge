@@ -40,7 +40,8 @@ struct PairingView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .frame(width: 220, height: 220)
+                .frame(width: 240, height: 240)
+                .glassSurface(cornerRadius: 20, tint: .green)
             } else if let qrData = state.pairingQRData,
                let qrImage = generateQRCode(from: qrData) {
                 Image(nsImage: qrImage)
@@ -48,12 +49,12 @@ struct PairingView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 220, height: 220)
-                    .padding(8)
-                    .background(.regularMaterial)
-                    .cornerRadius(12)
+                    .padding(10)
+                    .glassSurface(cornerRadius: 20)
             } else if state.isPairing {
                 ProgressView("Generating pairing code…")
-                    .frame(width: 220, height: 220)
+                    .frame(width: 240, height: 240)
+                    .glassSurface(cornerRadius: 20)
             } else if let error = state.pairingError {
                 VStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
@@ -66,7 +67,8 @@ struct PairingView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
-                .frame(width: 220, height: 220)
+                .frame(width: 240, height: 240)
+                .glassSurface(cornerRadius: 20, tint: .orange)
             }
 
             // Pairing data (manual entry fallback) — hidden on success
@@ -76,9 +78,8 @@ struct PairingView: View {
                         .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
-                        .background(.regularMaterial)
-                        .cornerRadius(8)
+                        .padding(10)
+                        .glassSurface(cornerRadius: 10)
                 }
                 .font(.caption)
             }
