@@ -125,10 +125,10 @@ fi
 
 # --- install + launch ---
 echo ""
-echo "▸ Installing $APK…"
+echo "▸ Installing ${APK}…"
 "$ADB" $ADB_ARGS install -r "$APK"
 
-echo "▸ Launching $ACTIVITY…"
+echo "▸ Launching ${ACTIVITY}…"
 "$ADB" $ADB_ARGS shell am start -n "$APPLICATION_ID/$ACTIVITY"
 
 echo ""
