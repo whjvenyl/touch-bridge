@@ -1,0 +1,36 @@
+---
+title: touchbridge list-devices
+description: List all paired companion devices
+sidebar:
+  icon: list
+  order: 5
+---
+
+# `touchbridge list-devices`
+
+Lists all paired companion devices stored in the macOS Keychain.
+
+## Usage
+
+```bash
+touchbridge list-devices
+```
+
+## Example output
+
+```
+Paired devices (2):
+
+  1. iPhone Pro (abc123def456)
+     Paired: Aug 25, 2026 at 2:15 PM
+
+  2. Apple Watch (xyz789)
+     Paired: Aug 20, 2026 at 9:30 AM
+```
+
+If no devices are paired:
+
+```
+No paired devices.
+Run 'touchbridge pair' to pair a companion device.
+```

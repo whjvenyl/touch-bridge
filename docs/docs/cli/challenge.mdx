@@ -1,0 +1,33 @@
+---
+title: touchbridge challenge
+description: Issue a challenge to a paired device and print the result
+sidebar:
+  icon: shield-question
+  order: 4
+---
+
+# `touchbridge challenge`
+
+Issues a challenge to a paired companion device and prints the result. Useful for testing the crypto pipeline without going through PAM.
+
+## Usage
+
+```bash
+touchbridge challenge --device <device-id> [options]
+```
+
+## Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--device <id>` | required | Device ID of the paired companion |
+| `--reason <text>` | `touchbridge` | Reason string shown on the companion device |
+| `--timeout <seconds>` | `30` | Timeout in seconds to wait for response |
+
+## Examples
+
+```bash
+touchbridge challenge --device abc123 --reason "testing"
+```
+
+Challenges the paired device with ID `abc123`, showing "testing" on the companion's biometric prompt.

@@ -1,0 +1,68 @@
+---
+title: touchbridge logs
+description: View recent authentication events from the audit log
+sidebar:
+  icon: scroll-text
+  order: 7
+---
+
+# `touchbridge logs`
+
+Views recent authentication events from the audit log. The log is stored as NDJSON at `~/Library/Logs/TouchBridge/audit.log`.
+
+## Usage
+
+```bash
+touchbridge logs [options]
+```
+
+## Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--count <n>` | `20` | Number of recent entries to show |
+| `--surface <name>` | — | Filter by surface (e.g., `pam_sudo`, `pam_screensaver`) |
+| `--result <result>` | — | Filter by result (e.g., `VERIFIED`, `FAILED_TIMEOUT`) |
+| `--json` | off | Show entries as raw JSON |
+| `--failures` | off | Show only failures |
+| `--summary` | off | Show summary statistics |
+| `--export <format>` | — | Export auth history (`csv` or `json`) |
+
+## Examples
+
+### Recent events
+
+```bash
+touchbridge logs
+```
+
+### Last 50 entries
+
+```bash
+touchbridge logs --count 50
+```
+
+### Failures only
+
+```bash
+touchbridge logs --failures
+```
+
+### Summary dashboard
+
+```bash
+touchbridge logs --summary
+```
+
+Shows success rate, latency breakdown, and per-surface stats.
+
+### Export for security review
+
+```bash
+touchbridge logs --export csv > auth-history.csv
+touchbridge logs --export json > auth-history.json
+```
+
+:::note
+The audit log never records nonce values — only session IDs, results, timestamps, and device IDs.
+:::

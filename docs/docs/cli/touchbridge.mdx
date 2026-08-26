@@ -1,0 +1,41 @@
+---
+title: touchbridge
+description: TouchBridge CLI — approve macOS auth prompts from your phone or watch
+sidebar:
+  icon: terminal
+  order: 1
+---
+
+# `touchbridge`
+
+The TouchBridge CLI controls the daemon, manages pairing, and views auth history.
+
+## Usage
+
+```bash
+touchbridge <subcommand> [options]
+```
+
+## Subcommands
+
+| Command | Description |
+|---------|-------------|
+| [`serve`](/cli/serve) | Start the daemon |
+| [`pair`](/cli/pair) | Generate pairing QR and wait for a companion device |
+| [`challenge`](/cli/challenge) | Issue a challenge to a paired device |
+| [`list-devices`](/cli/list-devices) | List all paired companion devices |
+| [`config`](/cli/config) | Read and write policy configuration |
+| [`logs`](/cli/logs) | View recent authentication events |
+
+## Version
+
+```bash
+touchbridge --version
+```
+
+## Help
+
+```bash
+touchbridge --help
+touchbridge serve --help
+```

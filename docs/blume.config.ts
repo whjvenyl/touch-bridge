@@ -14,8 +14,8 @@ export default defineConfig({
 
   navigation: {
     tabs: [
-      { label: "Docs", path: "/guides", icon: "book-open" },
-      { label: "Architecture", path: "/architecture", icon: "layout" },
+      { label: "Docs", path: "/", icon: "book-open" },
+      { label: "CLI", path: "/cli", icon: "terminal" },
       { label: "Changelog", path: "/changelog", href: "/changelog", icon: "history" },
     ],
   },

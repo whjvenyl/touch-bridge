@@ -1,0 +1,41 @@
+---
+title: touchbridge pair
+description: Generate pairing QR data and wait for a companion device
+sidebar:
+  icon: qr-code
+  order: 3
+---
+
+# `touchbridge pair`
+
+Generates a pairing QR code and waits for a companion device to connect and complete pairing.
+
+## Usage
+
+```bash
+touchbridge pair [options]
+```
+
+## Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--timeout <seconds>` | `300` | Timeout in seconds to wait for pairing |
+
+## Examples
+
+```bash
+touchbridge pair
+```
+
+Displays a QR code in the terminal and prints the pairing JSON:
+
+```json
+{"version":1,"serviceUUID":"B5E6D1A4-...","pairingToken":"...","macName":"Mac Mini"}
+```
+
+On the companion device, scan the QR code (or paste the JSON manually).
+
+:::warning
+The pairing token is single-use and expires after 5 minutes. The daemon rejects any pairing attempt without a matching token.
+:::

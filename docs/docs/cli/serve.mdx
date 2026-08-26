@@ -1,0 +1,64 @@
+---
+title: touchbridge serve
+description: Start the TouchBridge daemon
+sidebar:
+  icon: play
+  order: 2
+---
+
+# `touchbridge serve`
+
+Start the TouchBridge daemon. Listens for PAM auth requests via Unix socket and communicates with paired companion devices over BLE.
+
+## Usage
+
+```bash
+touchbridge serve [options]
+```
+
+## Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--rssi-threshold <dBm>` | `-75` | RSSI proximity threshold in dBm |
+| `--simulator` | off | Run in simulator mode — no iPhone needed. Auto-approves all auth requests using software keys |
+| `--interactive` | off | Interactive simulator — prompts in terminal for approve/deny. Implies `--simulator` |
+| `--auto-lock` | off | Enable proximity auto-lock — lock Mac when companion disconnects |
+
+## Examples
+
+### Normal mode
+
+```bash
+touchbridge serve
+```
+
+Starts the daemon, advertises over BLE, and waits for companion device connections.
+
+### Simulator mode
+
+```bash
+touchbridge serve --simulator
+```
+
+Auto-approves all auth requests using software P-256 keys. No iPhone required. For testing and CI only.
+
+### Interactive simulator
+
+```bash
+touchbridge serve --interactive
+```
+
+Prompts `[Y/n]` in the terminal for each auth request.
+
+### Proximity auto-lock
+
+```bash
+touchbridge serve --auto-lock
+```
+
+Locks the Mac screen when the companion device disconnects from BLE for 30 seconds.
+
+:::note
+The daemon runs as a user-level LaunchAgent, not root. It's started automatically at login after installation.
+:::

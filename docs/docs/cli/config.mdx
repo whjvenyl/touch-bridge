@@ -1,0 +1,78 @@
+---
+title: touchbridge config
+description: Read and write TouchBridge policy configuration
+sidebar:
+  icon: sliders-horizontal
+  order: 6
+---
+
+# `touchbridge config`
+
+Reads and writes TouchBridge policy configuration. Stored at `~/Library/Application Support/TouchBridge/policy.plist`.
+
+## Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `config show` | Show current policy configuration |
+| `config set` | Set a policy value |
+| `config reset` | Reset all settings to defaults |
+
+## `config show`
+
+```bash
+touchbridge config show
+```
+
+Example output:
+
+```
+TouchBridge Policy Configuration
+  Auth timeout:    15.0s
+  RSSI threshold:  -75 dBm
+
+Surface Policies:
+  sudo:             biometric required
+  screensaver:      proximity session (30 min)
+  app_store:        biometric required
+  system_settings:  biometric required
+  browser_autofill: proximity session (10 min)
+```
+
+## `config set`
+
+```bash
+touchbridge config set [options]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--timeout <seconds>` | `15` | Global auth timeout |
+| `--rssi <dBm>` | `-75` | RSSI proximity threshold |
+| `--surface <name>` | — | Surface to configure (`sudo`, `screensaver`, `app_store`, `system_settings`, `browser_autofill`) |
+| `--mode <mode>` | — | Auth mode: `biometric_required` or `proximity_session` |
+| `--ttl <minutes>` | — | Session TTL for proximity session mode |
+
+### Examples
+
+```bash
+# Change auth timeout
+touchbridge config set --timeout 20
+
+# Require biometric for screensaver
+touchbridge config set --surface screensaver --mode biometric_required
+
+# Use proximity session for sudo (10 min TTL)
+touchbridge config set --surface sudo --mode proximity_session --ttl 10
+
+# Set RSSI threshold
+touchbridge config set --rssi -60
+```
+
+## `config reset`
+
+```bash
+touchbridge config reset
+```
+
+Resets all policy settings to defaults.
