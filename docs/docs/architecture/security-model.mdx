@@ -41,7 +41,7 @@ sidebar:
 
 - After ECDH, companion sends `Identify` with `deviceID`, `deviceName`, `deviceType`, and `signature`
 - Signature = ECDSA P-256 of `(deviceID concatenated with daemonEphemeralPubKey)` signed with long-term paired key
-- Signature encoding: ASN.1 DER (both Apple `.ecdsaSignatureMessageX962SHA256` and Android `SHA256withECDSA` produce DER — no conversion needed on either platform)
+- Signature encoding is ASN.1 DER on both platforms
 - Daemon verifies against pinned public key from Keychain
 - Binds the identify to this specific ECDH session — prevents replay
 - Daemon rejects if signature is missing, invalid, or over the wrong key
@@ -131,7 +131,7 @@ When active, `authenticateFromPAM` returns immediately with `forced_fallback` �
 - **macOS kernel compromise**: SIP-protected paths are out of scope
 - **BLE jamming**: denial of service falls through to password
 - **Unauthenticated ECDH**: a MITM could observe encrypted traffic (but cannot forge approvals)
-- **Android app-layer compromise**: the Android signing key does not set `setUserAuthenticationRequired` at the OS level — biometric gating is enforced at the app layer via `BiometricPrompt.CryptoObject`. A compromised app process could sign Identify messages without biometric. Challenge responses still require the `CryptoObject` from a successful biometric prompt. This is a deliberate tradeoff: it allows Identify to work on reconnect without triggering a prompt.
+- **Android app-layer compromise**: the Android signing key does not set `setUserAuthenticationRequired` at the OS level. Biometric gating is enforced at the app layer via `BiometricPrompt.CryptoObject`. A compromised app process could sign Identify messages without biometric. Challenge responses still require the `CryptoObject` from a successful biometric prompt. This is a deliberate tradeoff that allows Identify to work on reconnect without triggering a prompt.
 
 :::note
 TouchBridge is fail-open to password. If anything goes wrong — daemon down, phone unreachable, BLE jammed, timeout, kill-switch active — the normal password prompt appears. You are never locked out.
