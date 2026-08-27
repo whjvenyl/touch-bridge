@@ -43,14 +43,13 @@ targets:
         outputFiles:
           - $(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/Contents/Resources/touchbridge
           - $(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/Contents/Resources/pam_touchbridge.so
-          - $(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/Contents/Frameworks/TouchBridgeCore.framework
         script: |
           set -euo pipefail
           APP_BUNDLE="$BUILT_PRODUCTS_DIR/$PRODUCT_NAME.app"
           RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
-          FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
 
-          # Daemon binary is built by the touchbridge target in this same project
+          # Daemon binary is built by the touchbridge target in this same project.
+          # TouchBridgeCore is statically linked, so the binary is self-contained.
           DAEMON_BIN="$BUILT_PRODUCTS_DIR/touchbridge"
           if [ ! -f "$DAEMON_BIN" ]; then
             echo "error: touchbridge binary not found at $DAEMON_BIN"
@@ -60,18 +59,6 @@ targets:
           rm -f "$RESOURCES_DIR/touchbridge" "$RESOURCES_DIR/pam_touchbridge.so"
           cp "$DAEMON_BIN" "$RESOURCES_DIR/touchbridge"
           chmod 755 "$RESOURCES_DIR/touchbridge"
-
-          # Embed TouchBridgeCore.framework (the daemon binary links against it)
-          TB_CORE_FW="$BUILT_PRODUCTS_DIR/TouchBridgeCore.framework"
-          if [ -d "$TB_CORE_FW" ]; then
-            mkdir -p "$FRAMEWORKS_DIR"
-            rm -rf "$FRAMEWORKS_DIR/TouchBridgeCore.framework"
-            cp -R "$TB_CORE_FW" "$FRAMEWORKS_DIR/TouchBridgeCore.framework"
-            echo "Embedded TouchBridgeCore.framework into app Frameworks"
-          else
-            echo "error: TouchBridgeCore.framework not found at $TB_CORE_FW"
-            exit 1
-          fi
 
           # Build PAM module (universal binary)
           cd "$PROJECT_DIR/pam"
@@ -84,7 +71,7 @@ targets:
           cp "pam_touchbridge.so" "$RESOURCES_DIR/pam_touchbridge.so"
           chmod 444 "$RESOURCES_DIR/pam_touchbridge.so"
 
-          echo "Bundled touchbridge + pam_touchbridge.so + TouchBridgeCore.framework into app"
+          echo "Bundled touchbridge + pam_touchbridge.so into app"
     postBuildScripts:
       - name: Embed privileged helper in LaunchDaemons
         basedOnDependencyAnalysis: false

@@ -1,6 +1,6 @@
 targets:
   TouchBridgeCore:
-    type: framework
+    type: library.static
     platform: macOS
     sources:
       - path: Sources/TouchBridgeCore
@@ -9,7 +9,6 @@ targets:
     settings:
       base:
         PRODUCT_NAME: TouchBridgeCore
-        GENERATE_INFOPLIST_FILE: YES
 
   touchbridge:
     type: tool
@@ -18,6 +17,7 @@ targets:
       - path: Sources/touchbridge
     dependencies:
       - target: TouchBridgeCore
+      - package: TouchBridgeProtocol
       - package: ArgumentParser
     settings:
       base:
@@ -30,6 +30,7 @@ targets:
       - path: Tests/TouchBridgeCoreTests
     dependencies:
       - target: TouchBridgeCore
+      - package: TouchBridgeProtocol
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
