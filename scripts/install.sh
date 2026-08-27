@@ -216,3 +216,9 @@ echo "     (or use the menubar app Settings → Authentication Surfaces)"
 echo "  2. Pair a device:    touchbridge pair"
 echo "  3. Test:             sudo echo 'TouchBridge works!'"
 echo ""
+
+# Close file descriptors so sudo can exit cleanly.
+# Child processes (xcodebuild remnants, launchd-spawned daemon) may hold
+# copies of our stdout/stderr pipe. Without closing them, sudo waits for
+# EOF, hangs, and gets SIGKILL'd — producing the "killed" message.
+exec 1>&- 2>&- 0<&-
