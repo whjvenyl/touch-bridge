@@ -133,9 +133,12 @@ class GoldenVectorTest {
         val vectors = loadGoldenVectors()
         val v = vectors.find { it.name == "identify" } ?: throw AssertionError("identify vector missing")
 
+        val signature = ByteArray(72) { 0xDD.toByte() }
         val msg = Identify.newBuilder()
             .setDeviceId("device-xyz")
             .setDeviceName("Pixel Watch")
+            .setSignature(com.google.protobuf.ByteString.copyFrom(signature))
+            .setDeviceType(dev.touchbridge.android.proto.DeviceType.PHONE)
             .build()
         val encoded = WireFormat.encode(WireFormat.TYPE_IDENTIFY, msg.toByteArray())
 

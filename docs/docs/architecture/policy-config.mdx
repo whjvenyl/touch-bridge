@@ -51,8 +51,6 @@ Determines how the daemon dispatches challenges when multiple devices are connec
     <dict>
         <key>mode</key>
         <string>priority_order</string>
-        <key>group</key>
-        <string>all</string>
     </dict>
 </dict>
 ```
@@ -179,11 +177,6 @@ After a successful biometric authentication, subsequent requests within the TTL 
       type: '"any_one_of" | "priority_order"',
       default: '"any_one_of"',
       description: "How challenges are dispatched to multiple devices.",
-    },
-    "DeviceSelection.group": {
-      type: "string",
-      default: '"all"',
-      description: "Device group name. 'all' means every enabled paired device.",
     },
     "Surfaces.<name>.mode": {
       type: '"biometric_required" | "proximity_session"',

@@ -232,7 +232,7 @@ public final class DaemonCoordinator: NSObject, PAMAuthHandler, @unchecked Senda
             return (false, "no_companion_connected")
         }
 
-        logger.info("PAM auth: mode=\(selection.mode.rawValue) group=\(selection.group) targets=\(targets.count)")
+        logger.info("PAM auth: mode=\(selection.mode.rawValue) targets=\(targets.count)")
 
         // Race: first device response OR global timeout — whichever fires first wins.
         //

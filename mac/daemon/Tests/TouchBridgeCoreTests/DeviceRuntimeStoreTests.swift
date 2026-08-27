@@ -113,7 +113,6 @@ import Foundation
     )
     let policy = engine.selectionPolicy()
     #expect(policy.mode == .anyOneOf)
-    #expect(policy.group == "all")
 }
 
 @Test func selectionPolicyReadsPriorityOrderFromPlist() throws {
@@ -124,8 +123,7 @@ import Foundation
     let plistPath = plistDir.appendingPathComponent("policy.plist").path
     let dict: NSDictionary = [
         "DeviceSelection": [
-            "mode": "priority_order",
-            "group": "my-group"
+            "mode": "priority_order"
         ]
     ]
     dict.write(toFile: plistPath, atomically: true)
@@ -133,7 +131,6 @@ import Foundation
     let engine = PolicyEngine(plistPath: plistPath)
     let policy = engine.selectionPolicy()
     #expect(policy.mode == .priorityOrder)
-    #expect(policy.group == "my-group")
 }
 
 @Test func perDeviceTimeoutDividesGlobalByCount() {

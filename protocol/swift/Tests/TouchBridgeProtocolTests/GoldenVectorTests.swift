@@ -22,14 +22,14 @@ private func loadGoldenVectors() throws -> [GoldenVector] {
     _ = path
 
     // Resolve the golden file relative to the package root.
-    // The test runs from .build/.../debug, so we walk up to find protocol/golden.
+    // The test CWD is the SPM package directory (protocol/swift).
     let possiblePaths = [
-        // From SPM test working directory
-        "../../../protocol/golden/wire_vectors.json",
-        // From Xcode test working directory
-        "../../../../protocol/golden/wire_vectors.json",
+        // From SPM test working directory (protocol/swift)
+        "../golden/wire_vectors.json",
+        // From Xcode test working directory (deeper nesting)
+        "../../../golden/wire_vectors.json",
         // Absolute fallback
-        "/Users/tobias.bannwert/Workspace/pixel-watch/UnTouchID/protocol/golden/wire_vectors.json",
+        "/Users/tobias.bannwart/Workspace/pixel-watch/UnTouchID/protocol/golden/wire_vectors.json",
     ]
 
     for path in possiblePaths {
@@ -139,6 +139,8 @@ private func loadGoldenVectors() throws -> [GoldenVector] {
     let msg = TBIdentify.with {
         $0.deviceID = "device-xyz"
         $0.deviceName = "Pixel Watch"
+        $0.signature = Data(repeating: 0xDD, count: 72)
+        $0.deviceType = .phone
     }
     let encoded = try WireFormat.encode(.identify, msg)
     let hex = encoded.map { String(format: "%02x", $0) }.joined()

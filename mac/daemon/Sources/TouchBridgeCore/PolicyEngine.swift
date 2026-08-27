@@ -37,17 +37,13 @@ public enum SelectionMode: String, Codable, Sendable {
 /// Device selection policy — determines which devices receive challenges
 /// and in what order.
 ///
-/// Default: `anyOneOf` with group `"all"` (broadcast to all enabled devices).
-/// Users can create ordered groups via `policy.plist` to enable `priorityOrder`.
+/// Default: `anyOneOf` (broadcast to all enabled devices).
+/// Users can set `priorityOrder` via `policy.plist` for sequential dispatch.
 public struct SelectionPolicy: Codable, Sendable, Equatable {
     public let mode: SelectionMode
-    /// Group name — only devices in this group are challenged.
-    /// `"all"` means every enabled paired device.
-    public let group: String
 
-    public init(mode: SelectionMode = .anyOneOf, group: String = "all") {
+    public init(mode: SelectionMode = .anyOneOf) {
         self.mode = mode
-        self.group = group
     }
 }
 
@@ -182,16 +178,15 @@ public final class PolicyEngine: Sendable {
     ///     group = "all" | "custom-group-name";
     /// };
     /// ```
-    /// Defaults to `anyOneOf` with group `"all"` (broadcast to all enabled devices).
+    /// Defaults to `anyOneOf` (broadcast to all enabled devices).
     public func selectionPolicy() -> SelectionPolicy {
         if let dict = NSDictionary(contentsOfFile: plistPath),
            let selection = dict["DeviceSelection"] as? [String: Any] {
             let modeStr = selection["mode"] as? String ?? "any_one_of"
-            let group = selection["group"] as? String ?? "all"
             let mode = SelectionMode(rawValue: modeStr) ?? .anyOneOf
-            return SelectionPolicy(mode: mode, group: group)
+            return SelectionPolicy(mode: mode)
         }
-        return SelectionPolicy(mode: .anyOneOf, group: "all")
+        return SelectionPolicy(mode: .anyOneOf)
     }
 
     /// Per-device timeout budget for `priorityOrder` mode.

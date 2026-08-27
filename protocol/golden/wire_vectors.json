@@ -1,32 +1,32 @@
 [
-  {
-    "expectedHex" : "01010a0b54657374206950686f6e65124101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101011a0a6465766963652d616263221002020202020202020202020202020202",
-    "messageType" : 1,
-    "name" : "pairRequest"
-  },
-  {
-    "expectedHex" : "01020a0e6d61632d6465766963652d303031124103030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303031801",
-    "messageType" : 2,
-    "name" : "pairResponse"
-  },
-  {
-    "expectedHex" : "01030a0a6368616c2d3132333435123cabababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab1a047375646f20d285d8cc04",
-    "messageType" : 3,
-    "name" : "challengeIssued"
-  },
-  {
-    "expectedHex" : "01040a09726573702d757569641248cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc1a0a6465766963652d313233",
-    "messageType" : 4,
-    "name" : "challengeResponse"
-  },
-  {
-    "expectedHex" : "010508e907120f4b657920696e76616c6964617465641a086368616c2d657272",
-    "messageType" : 5,
-    "name" : "error"
-  },
-  {
-    "expectedHex" : "01060a0a6465766963652d78797a120b506978656c205761746368",
-    "messageType" : 6,
-    "name" : "identify"
-  }
+    {
+        "expectedHex": "01010a0b54657374206950686f6e65124101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101011a0a6465766963652d616263221002020202020202020202020202020202",
+        "messageType": 1,
+        "name": "pairRequest"
+    },
+    {
+        "expectedHex": "01020a0e6d61632d6465766963652d303031124103030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303031801",
+        "messageType": 2,
+        "name": "pairResponse"
+    },
+    {
+        "expectedHex": "01030a0a6368616c2d3132333435123cabababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab1a047375646f20d285d8cc04",
+        "messageType": 3,
+        "name": "challengeIssued"
+    },
+    {
+        "expectedHex": "01040a09726573702d757569641248cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc1a0a6465766963652d313233",
+        "messageType": 4,
+        "name": "challengeResponse"
+    },
+    {
+        "expectedHex": "010508e907120f4b657920696e76616c6964617465641a086368616c2d657272",
+        "messageType": 5,
+        "name": "error"
+    },
+    {
+        "expectedHex": "01060a0a6465766963652d78797a120b506978656c2057617463681a48dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd2001",
+        "messageType": 6,
+        "name": "identify"
+    }
 ]
