@@ -208,7 +208,8 @@ fi
 
 echo ""
 echo "Next steps:"
-echo "  1. Open TouchBridge on your iPhone to pair"
-echo "  2. Run: touchbridge pair"
-echo "  3. Test: sudo echo 'TouchBridge works!'"
+echo "  1. Enable surfaces:  touchbridge config set --surface sudo --enable"
+echo "     (or use the menubar app Settings → Authentication Surfaces)"
+echo "  2. Pair a device:    touchbridge pair"
+echo "  3. Test:             sudo echo 'TouchBridge works!'"
 echo ""

@@ -96,12 +96,21 @@ static int json_escape(const char *in, char *out, size_t outlen)
  * and contains a simple JSON object like:
  *   {"sudo": true, "screensaver": false}
  *
- * Returns 1 if the surface is enabled (or if the file/key is missing —
- * defaulting to enabled), 0 if explicitly disabled.
+ * Returns 1 if the surface is explicitly enabled, 0 otherwise.
  *
- * This lets the menubar app toggle surfaces on/off without ever touching
- * /etc/pam.d/ — the PAM config line is installed once at install time,
- * and surfaces.json is a user-level override that can only disable.
+ * Fail-safe defaults: if the file is missing, empty, malformed, or the
+ * surface key is absent, the surface is DISABLED. This means:
+ *   - No config file      → disabled (safe default)
+ *   - Malformed config    → disabled (same as no config)
+ *   - Key missing         → disabled
+ *   - Key present, true   → enabled
+ *   - Key present, false  → disabled
+ *
+ * The file is created by:
+ *   - `scripts/install.sh` (writes sudo=true, screensaver=false by default)
+ *   - The menubar app (when the user toggles a surface)
+ * Both headless and menubar workflows produce the file — the PAM module
+ * never needs to know which one is in use.
  */
 static int surface_is_enabled(const char *service)
 {
@@ -116,42 +125,40 @@ static int surface_is_enabled(const char *service)
      * For sudo, getuid() returns the invoking user, not root. */
     struct passwd *pw = getpwuid(getuid());
     if (pw == NULL || pw->pw_dir == NULL) {
-        /* Can't determine home dir — default to enabled. */
-        return 1;
+        return 0; /* Can't determine home dir — disabled. */
     }
 
     int ret = snprintf(path, sizeof(path),
         "%s/Library/Application Support/TouchBridge/surfaces.json",
         pw->pw_dir);
     if (ret < 0 || (size_t)ret >= sizeof(path)) {
-        return 1; /* Path too long — default to enabled. */
+        return 0; /* Path too long — disabled. */
     }
 
     fp = fopen(path, "r");
     if (fp == NULL) {
-        /* No config file — default to enabled. */
-        return 1;
+        return 0; /* No config file — disabled. */
     }
 
     nread = fread(buf, 1, sizeof(buf) - 1, fp);
     fclose(fp);
 
     if (nread == 0) {
-        return 1; /* Empty file — default to enabled. */
+        return 0; /* Empty file — disabled. */
     }
     buf[nread] = '\0';
 
-    /* Search for "service": false  (simple string search, no JSON parser).
+    /* Search for "service": true  (simple string search, no JSON parser).
      * We look for the pattern "<service>": followed by optional whitespace
-     * and then "false". If found, the surface is disabled. */
+     * and then "true". Only an explicit true enables the surface. */
     ret = snprintf(key, sizeof(key), "\"%s\"", service);
     if (ret < 0 || (size_t)ret >= sizeof(key)) {
-        return 1; /* Key too long — default to enabled. */
+        return 0; /* Key too long — disabled. */
     }
 
     found = strstr(buf, key);
     if (found == NULL) {
-        return 1; /* Surface not in config — default to enabled. */
+        return 0; /* Surface not in config — disabled. */
     }
 
     /* Skip past the key, then skip whitespace and colon. */
@@ -163,12 +170,12 @@ static int surface_is_enabled(const char *service)
         found++;
     }
 
-    /* Check if the value is "false". */
-    if (strncmp(found, "false", 5) == 0) {
-        return 0; /* Explicitly disabled. */
+    /* Check if the value is "true". Only explicit true enables. */
+    if (strncmp(found, "true", 4) == 0) {
+        return 1; /* Explicitly enabled. */
     }
 
-    return 1; /* Enabled (true or any other value). */
+    return 0; /* Any other value (false, null, malformed) — disabled. */
 }
 
 /*
@@ -384,10 +391,13 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
         goto cleanup;
     }
 
-    /* Connect to daemon */
+    /* Connect to daemon.
+     * If the daemon is unreachable, fall through silently — no message,
+     * no delay. The user should not notice TouchBridge at all unless it
+     * actually authenticates them. Behave as if the PAM module weren't
+     * installed. */
     fd = connect_to_daemon(sock_path, timeout_sec);
     if (fd < 0) {
-        pam_notify(pamh, "TouchBridge: daemon not running — falling through to password");
         goto cleanup;
     }
 

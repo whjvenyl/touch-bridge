@@ -74,11 +74,11 @@ class MenuBarState: ObservableObject {
         isAutoLaunchEnabled = FileManager.default.fileExists(atPath: launchAgentPlist)
 
         // Check PAM surface status from surfaces.json (user-level config).
-        // The PAM line in /etc/pam.d/ is installed once at install time;
-        // surfaces.json is the runtime toggle that can only disable, never enable.
+        // Defaults to disabled (false) when file/key is missing — the user
+        // must explicitly opt in via the menubar app.
         let surfaces = readSurfacesConfig()
-        sudoEnabled = surfaces["sudo"] ?? true
-        screensaverEnabled = surfaces["screensaver"] ?? true
+        sudoEnabled = surfaces["sudo"] ?? false
+        screensaverEnabled = surfaces["screensaver"] ?? false
     }
 
     /// Path to the user-level surfaces config file.
@@ -98,23 +98,20 @@ class MenuBarState: ObservableObject {
     }
 
     /// Write the surfaces.json config file.
-    /// Only writes surfaces that are explicitly disabled (false) —
-    /// missing keys default to enabled, so we keep the file minimal.
+    /// Writes explicit true/false for each surface. The PAM module only
+    /// activates a surface when it reads an explicit "true" — missing keys
+    /// or missing file default to disabled.
     private func writeSurfacesConfig(sudo: Bool, screensaver: Bool) {
-        var config: [String: Bool] = [:]
-        if !sudo { config["sudo"] = false }
-        if !screensaver { config["screensaver"] = false }
+        let config: [String: Bool] = [
+            "sudo": sudo,
+            "screensaver": screensaver,
+        ]
 
         let dir = (surfacesConfigPath as NSString).deletingLastPathComponent
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 
-        if config.isEmpty {
-            // All enabled — remove the file so defaults kick in.
-            try? FileManager.default.removeItem(atPath: surfacesConfigPath)
-        } else {
-            if let data = try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys]) {
-                try? data.write(to: URL(fileURLWithPath: surfacesConfigPath), options: .atomic)
-            }
+        if let data = try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: URL(fileURLWithPath: surfacesConfigPath), options: .atomic)
         }
     }
 

@@ -37,13 +37,31 @@ struct ConfigShow: ParsableCommand {
             }
             print(line)
         }
+
+        print("")
+        print("Surface Enable/Disable (surfaces.json):")
+        let surfaces = readSurfacesConfig()
+        let sudoEnabled = surfaces["sudo"] ?? false
+        let screensaverEnabled = surfaces["screensaver"] ?? false
+        print("  sudo: \(sudoEnabled ? "enabled" : "disabled")")
+        print("  screensaver: \(screensaverEnabled ? "enabled" : "disabled")")
+    }
+
+    private func readSurfacesConfig() -> [String: Bool] {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let path = "\(home)/Library/Application Support/TouchBridge/surfaces.json"
+        guard let data = FileManager.default.contents(atPath: path),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Bool] else {
+            return [:]
+        }
+        return dict
     }
 }
 
 struct ConfigSet: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "set",
-        abstract: "Set a policy value."
+        abstract: "Set a policy value or enable/disable a surface."
     )
 
     @Option(name: .long, help: "Surface name (e.g., sudo, screensaver).")
@@ -61,7 +79,27 @@ struct ConfigSet: ParsableCommand {
     @Option(name: .long, help: "RSSI threshold in dBm.")
     var rssi: Int?
 
+    @Flag(name: .long, help: "Enable the surface (writes surfaces.json). Use with --surface.")
+    var enable: Bool = false
+
+    @Flag(name: .long, help: "Disable the surface (writes surfaces.json). Use with --surface.")
+    var disable: Bool = false
+
     func run() throws {
+        // Handle surface enable/disable (surfaces.json)
+        if enable || disable {
+            guard let surface else {
+                throw ValidationError("--enable/--disable requires --surface")
+            }
+            if enable && disable {
+                throw ValidationError("--enable and --disable are mutually exclusive")
+            }
+            try writeSurfaceConfig(surface: surface, enabled: enable)
+            print("Surface '\(surface)' \(enable ? "enabled" : "disabled").")
+            return
+        }
+
+        // Handle policy.plist settings
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let plistPath = "\(home)/Library/Application Support/TouchBridge/policy.plist"
 
@@ -83,6 +121,24 @@ struct ConfigSet: ParsableCommand {
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         dict.write(toFile: plistPath, atomically: true)
         print("Policy saved.")
+    }
+
+    /// Read, update, and write surfaces.json.
+    private func writeSurfaceConfig(surface: String, enabled: Bool) throws {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let path = "\(home)/Library/Application Support/TouchBridge/surfaces.json"
+        let dir = (path as NSString).deletingLastPathComponent
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+
+        var config: [String: Bool] = [:]
+        if let data = FileManager.default.contents(atPath: path),
+           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Bool] {
+            config = dict
+        }
+        config[surface] = enabled
+
+        let data = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 }
 
