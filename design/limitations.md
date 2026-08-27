@@ -1,3 +1,6 @@
+> **⚠️ SUPERSEDED — kept for historical context only.**
+> Current limitations: [`docs/docs/architecture/limitations.mdx`](../docs/docs/architecture/limitations.mdx)
+
 # TouchBridge Limitations
 
 ## Cannot Do

@@ -1,3 +1,6 @@
+> **⚠️ SUPERSEDED — kept for historical context only.**
+> Current architecture docs: [`docs/docs/architecture/architecture.mdx`](../docs/docs/architecture/architecture.mdx)
+
 # TouchBridge Architecture
 
 ## Component Overview

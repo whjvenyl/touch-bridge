@@ -39,3 +39,4 @@ The Mac daemon supports multiple paired companion devices. The default selection
 - **SSH sessions**: `sudo` inside an SSH session goes through the same PAM stack, so the approval prompt appears on your phone even though you're remote. If your phone isn't near the Mac (BLE range), the request times out and falls back to password.
 - **iPad**: the companion app targets iPhone; iPad is untested as a companion device.
 - **Locked phone**: approval requires unlocking the phone with Face ID/Touch ID — that unlock is the biometric gate. A locked, unattended phone cannot silently approve anything.
+- **Android Identify without biometric**: the Android signing key does not require OS-level biometric authentication (unlike iOS Secure Enclave). This allows Identify to work on reconnect without a prompt, but means a compromised app process could sign Identify messages. Challenge responses still require biometric via `BiometricPrompt.CryptoObject`.

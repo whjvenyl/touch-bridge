@@ -1,3 +1,6 @@
+> **⚠️ SUPERSEDED — kept for historical context only.**
+> Current setup guide: [`docs/docs/architecture/setup.md`](../docs/docs/architecture/setup.md)
+
 # TouchBridge — Installation Guide
 
 Use your phone's fingerprint or face to authenticate on your Mac. No extra hardware required.

@@ -1,3 +1,7 @@
+> **⚠️ SUPERSEDED — kept for historical context only.**
+> This file is the original design review from 2025-08-26 (112 tests, no authenticated identify, no device types, no selection policy).
+> The current architecture review lives at [`docs/docs/architecture/architecture-review.md`](../docs/docs/architecture/architecture-review.md) (149 tests, authenticated identify, device types/caps, selection policy, kill-switch, golden vectors, DER investigation).
+
 # TouchBridge — Architecture Review
 
 **Date:** 2025-08-26 (revised)

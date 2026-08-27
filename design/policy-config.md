@@ -1,3 +1,6 @@
+> **⚠️ SUPERSEDED — kept for historical context only.**
+> Current policy config: [`docs/docs/architecture/policy-config.mdx`](../docs/docs/architecture/policy-config.mdx)
+
 # TouchBridge Policy Configuration
 
 ## Overview

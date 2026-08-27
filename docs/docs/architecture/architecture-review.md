@@ -5,19 +5,19 @@ description: Comprehensive audit of what's built, broken, and needs work
 
 # TouchBridge — Architecture Review
 
-**Date:** 2026-08-26 (revised)
-**Scope:** Full codebase after authenticated identify, device types/caps, selection policy, and kill-switch
+**Date:** 2026-08-27 (revised)
+**Scope:** Full codebase after authenticated identify, device types/caps, selection policy, kill-switch, golden vector update, and DER signature investigation
 
 ---
 
 ## Executive Summary
 
-TouchBridge is a PAM-replacement system that delegates macOS authentication to a paired phone or watch via BLE. The cryptographic design is sound (ECDH + AES-GCM + ECDSA P-256 with Secure Enclave, authenticated identify with proof-of-possession). The protocol is defined as protobuf with cross-platform code generation. The iOS and Android companions are both protocol-compliant. The macOS daemon has 131 passing tests with proper thread safety.
+TouchBridge is a PAM-replacement system that delegates macOS authentication to a paired phone or watch via BLE. The cryptographic design is sound (ECDH + AES-GCM + ECDSA P-256 with Secure Enclave, authenticated identify with proof-of-possession). The protocol is defined as protobuf with cross-platform code generation. The iOS and Android companions are both protocol-compliant. The macOS daemon has 149 passing tests with proper thread safety.
 
 | Area | Status |
 |------|--------|
 | Protocol & crypto design | Solid — protobuf single source of truth, authenticated identify |
-| macOS daemon | Functional, thread-safe, 131 tests |
+| macOS daemon | Functional, thread-safe, 149 tests |
 | PAM module | Functional, JSON escaping fixed |
 | iOS companion | Production-ready, sends signed identify + device type |
 | Android companion | Protocol-compliant, sends signed identify + device type |
@@ -56,7 +56,7 @@ TouchBridge is a PAM-replacement system that delegates macOS authentication to a
 - **Kill-switch** — `TOUCHBRIDGE_FORCE_PASSWORD=1` env var or `ForcePasswordFallback` plist key forces password fallback
 - **Watch delegation rule** — WATCH without secure enclave rejected from direct challenge response
 - **Selection policy** — `anyOneOf` (default broadcast) + `priorityOrder` (sequential with per-device budget)
-- **131 unit/integration tests**
+- **149 unit/integration tests**
 
 ### PAM Module (`mac/pam/`)
 - C universal binary (arm64 + x86_64)
@@ -114,6 +114,9 @@ TouchBridge is a PAM-replacement system that delegates macOS authentication to a
 | PAM JSON injection | **Fixed** | `json_escape()` function in pam_touchbridge.c |
 | Protocol defined in Swift only | **Fixed** | Protobuf schema with cross-platform code generation |
 | 256-byte message limit | **Fixed** | Increased to 512 bytes |
+| Golden identify vector stale | **Fixed** | `wire_vectors.json` identify vector updated with `signature` + `device_type`; Kotlin test updated; stale path bug fixed |
+| Dead `SelectionPolicy.group` field | **Removed** | Field was never used for filtering; removed from struct, plist, log line, tests, docs |
+| Android DER signature mismatch (reported) | **Non-issue** | Apple and Android both produce DER via X9.62 — no conversion needed |
 
 ---
 
@@ -133,11 +136,11 @@ TouchBridge is a PAM-replacement system that delegates macOS authentication to a
 
 **Recommendation:** Add iOS protocol conformance tests matching the Android golden vector tests.
 
-### 🟡 Android DER Signature Encoding
+### ✅ Android DER Signature Encoding — Resolved (non-issue)
 
-Android's `SHA256withECDSA` produces DER-encoded signatures. The daemon's `SecKeyVerifySignature(.ecdsaSignatureMessageX962SHA256)` expects X9.63 raw format (r‖s, 64 bytes). This affects both challenge-response and identify signatures. Hasn't surfaced because Android hasn't been physically E2E tested.
+A prior review flagged that Android's `SHA256withECDSA` produces DER-encoded signatures while the daemon expects raw X9.63 `r‖s`. **Investigation proved this wrong:** Apple's `.ecdsaSignatureMessageX962SHA256` API also produces DER (verified: 71 bytes, `0x30 0x45...`). The "X962" in the API name refers to ANSI X9.62 (the ECDSA standard), which specifies DER encoding — not raw `r‖s`. Both iOS and Android produce DER, and the daemon verifies DER. No conversion is needed on any platform.
 
-**Fix:** Convert DER to raw r‖s on Android before sending. Documented in `touchbridge.proto` comment.
+The incorrect comment in `touchbridge.proto` that instructed Android to convert has been fixed.
 
 ### 🟡 Unauthenticated ECDH Exchange
 
@@ -164,9 +167,8 @@ CI builds daemon, protocol, PAM, and iOS. No Android build or test in CI. Adding
 ## 5. Recommendations (Prioritized)
 
 ### P1 — Security
-1. Fix Android DER → raw signature encoding before physical E2E test
-2. Sign ECDH public keys with paired device keys (authenticate key exchange)
-3. Add Android CI to catch build regressions
+1. Sign ECDH public keys with paired device keys (authenticate key exchange)
+2. Add Android CI to catch build regressions
 
 ### P2 — Test Coverage
 4. Add iOS companion tests (protocol conformance at minimum)

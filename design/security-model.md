@@ -1,3 +1,6 @@
+> **⚠️ SUPERSEDED — kept for historical context only.**
+> Current security model: [`docs/docs/architecture/security-model.mdx`](../docs/docs/architecture/security-model.mdx)
+
 # TouchBridge Security Model
 
 ## Non-Negotiables
