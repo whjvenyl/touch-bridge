@@ -101,18 +101,6 @@ struct SettingsWindowView: View {
 struct GeneralSettingsView: View {
     @ObservedObject var state: MenuBarState
     @State private var showUninstallAlert = false
-    @State private var showApplyAlert = false
-
-    // Local pending preferences — the user edits these freely, and they
-    // only become live when "Apply" is clicked. This avoids triggering a
-    // privileged operation on every toggle flip.
-    @State private var pendingSudo: Bool = false
-    @State private var pendingScreensaver: Bool = false
-
-    /// True when the local pending state differs from what's actually applied.
-    private var hasPendingChanges: Bool {
-        pendingSudo != state.sudoEnabled || pendingScreensaver != state.screensaverEnabled
-    }
 
     var body: some View {
         TBForm(spacing: 16) {
@@ -166,65 +154,38 @@ struct GeneralSettingsView: View {
 
             TBSection("Authentication Surfaces") {
                 TBLabeledContent {
-                    Toggle(isOn: $pendingSudo) {
+                    Toggle(isOn: Binding(
+                        get: { state.sudoEnabled },
+                        set: { newValue in state.togglePAMSurface("sudo", enabled: newValue) }
+                    )) {
                         Label("Use TouchBridge for sudo", systemImage: "terminal")
                     }
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                     .labelsHidden()
-                    .disabled(state.isInstalling)
                 } label: {
                     Label("Use TouchBridge for sudo", systemImage: "terminal")
                 }
                 .annotation("Approve sudo prompts from your paired device instead of typing your password.")
 
                 TBLabeledContent {
-                    Toggle(isOn: $pendingScreensaver) {
+                    Toggle(isOn: Binding(
+                        get: { state.screensaverEnabled },
+                        set: { newValue in state.togglePAMSurface("screensaver", enabled: newValue) }
+                    )) {
                         Label("Use TouchBridge for screen saver unlock", systemImage: "lock.open")
                     }
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                     .labelsHidden()
-                    .disabled(state.isInstalling)
                 } label: {
                     Label("Use TouchBridge for screen saver unlock", systemImage: "lock.open")
                 }
                 .annotation("Unlock the screen saver by approving on your paired device.")
-
-                if state.isInstalling {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Applying changes…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } else if hasPendingChanges {
-                    HStack {
-                        Button("Apply Changes") {
-                            showApplyAlert = true
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-
-                        Button("Revert") {
-                            pendingSudo = state.sudoEnabled
-                            pendingScreensaver = state.screensaverEnabled
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-                }
             } footer: {
-                if hasPendingChanges {
-                    Text("Click Apply to confirm. You will be asked for your administrator password to modify PAM configuration.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Your password always remains available as a fallback.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text("Toggles take effect instantly. Your password always remains available as a fallback.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             // MARK: - Uninstall
@@ -235,16 +196,6 @@ struct GeneralSettingsView: View {
                 }
             }
         }
-        .onAppear {
-            pendingSudo = state.sudoEnabled
-            pendingScreensaver = state.screensaverEnabled
-        }
-        .onChange(of: state.sudoEnabled) { _, newValue in
-            pendingSudo = newValue
-        }
-        .onChange(of: state.screensaverEnabled) { _, newValue in
-            pendingScreensaver = newValue
-        }
         .alert("Uninstall TouchBridge?", isPresented: $showUninstallAlert) {
             Button("Uninstall", role: .destructive) {
                 Task { await state.uninstallSystem() }
@@ -252,24 +203,6 @@ struct GeneralSettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will remove the daemon, PAM module, and restore your original PAM configs. Paired devices and logs are preserved.")
-        }
-        .alert("Apply Authentication Changes?", isPresented: $showApplyAlert) {
-            Button("Apply", role: .destructive) {
-                Task {
-                    if pendingSudo != state.sudoEnabled {
-                        await state.togglePAMSurface("sudo", enabled: pendingSudo)
-                    }
-                    if pendingScreensaver != state.screensaverEnabled {
-                        await state.togglePAMSurface("screensaver", enabled: pendingScreensaver)
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) {
-                pendingSudo = state.sudoEnabled
-                pendingScreensaver = state.screensaverEnabled
-            }
-        } message: {
-            Text("Modifying PAM configuration requires administrator privileges. You will be prompted for your password.")
         }
     }
 }

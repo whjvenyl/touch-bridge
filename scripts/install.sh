@@ -96,16 +96,9 @@ fi
 info "PAM module built successfully."
 
 # Ad-hoc sign the PAM module so macOS Library Validation doesn't reject it
-# when loaded by platform binaries (sudo, etc.). Without a signature the module
-# still loads today but logs AMFI validation failures and may be blocked on
-# stricter configs / future OS versions.
-if command -v codesign >/dev/null 2>&1; then
-    if codesign -s - --force "$PAM_BUILD" 2>/dev/null; then
-        info "PAM module ad-hoc signed."
-    else
-        warn "Ad-hoc signing PAM module failed — continuing without signature."
-    fi
-fi
+# when loaded by platform binaries (sudo, etc.). We sign AFTER copying to
+# the final location so the code signature's mtime matches the file's mtime
+# (signing before copying causes a cs_mtime mismatch that AMFI rejects).
 
 # --- Install Binaries ---
 
@@ -119,6 +112,16 @@ info "Installing PAM module..."
 mkdir -p "$(dirname "$PAM_LIB")"
 cp "$PAM_BUILD" "$PAM_LIB"
 chmod 444 "$PAM_LIB"
+# Sign the PAM module in its final location (after copy) so the code
+# signature timestamp matches the file mtime. Signing before copying
+# causes a cs_mtime mismatch that AMFI rejects on macOS 26+.
+if command -v codesign >/dev/null 2>&1; then
+    if codesign -s - --force "$PAM_LIB" 2>/dev/null; then
+        info "PAM module ad-hoc signed at final location."
+    else
+        warn "Ad-hoc signing PAM module failed — continuing without signature."
+    fi
+fi
 info "Installed $PAM_LIB"
 
 # --- Create Directories ---
@@ -135,6 +138,8 @@ info "Created application support and log directories."
 # shellcheck source=pam-common.sh
 source "$SCRIPT_DIR/pam-common.sh"
 
+# Patch both PAM surfaces at install time. Individual surface toggles are
+# handled at runtime via surfaces.json (no root needed).
 tb_enable_sudo "prompt"
 tb_enable_screensaver "prompt"
 

@@ -73,18 +73,49 @@ class MenuBarState: ObservableObject {
         isDaemonRunning = client.isSocketAvailable
         isAutoLaunchEnabled = FileManager.default.fileExists(atPath: launchAgentPlist)
 
-        // Check PAM surface status
-        sudoEnabled = checkPAMSurface("sudo_local") || checkPAMSurface("sudo")
-        screensaverEnabled = checkPAMSurface("screensaver")
+        // Check PAM surface status from surfaces.json (user-level config).
+        // The PAM line in /etc/pam.d/ is installed once at install time;
+        // surfaces.json is the runtime toggle that can only disable, never enable.
+        let surfaces = readSurfacesConfig()
+        sudoEnabled = surfaces["sudo"] ?? true
+        screensaverEnabled = surfaces["screensaver"] ?? true
     }
 
-    /// Check if a PAM file contains our hook.
-    private func checkPAMSurface(_ name: String) -> Bool {
-        let path = "/etc/pam.d/\(name)"
-        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
-            return false
+    /// Path to the user-level surfaces config file.
+    private var surfacesConfigPath: String {
+        "\(NSHomeDirectory())/Library/Application Support/TouchBridge/surfaces.json"
+    }
+
+    /// Read the surfaces.json config file.
+    /// Returns a dictionary of surface name → enabled bool.
+    /// Missing file or keys default to enabled (true).
+    private func readSurfacesConfig() -> [String: Bool] {
+        guard let data = FileManager.default.contents(atPath: surfacesConfigPath),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Bool] else {
+            return [:]
         }
-        return content.contains("pam_touchbridge")
+        return dict
+    }
+
+    /// Write the surfaces.json config file.
+    /// Only writes surfaces that are explicitly disabled (false) —
+    /// missing keys default to enabled, so we keep the file minimal.
+    private func writeSurfacesConfig(sudo: Bool, screensaver: Bool) {
+        var config: [String: Bool] = [:]
+        if !sudo { config["sudo"] = false }
+        if !screensaver { config["screensaver"] = false }
+
+        let dir = (surfacesConfigPath as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+
+        if config.isEmpty {
+            // All enabled — remove the file so defaults kick in.
+            try? FileManager.default.removeItem(atPath: surfacesConfigPath)
+        } else {
+            if let data = try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: URL(fileURLWithPath: surfacesConfigPath), options: .atomic)
+            }
+        }
     }
 
     /// Start the daemon via launchctl.
@@ -134,11 +165,17 @@ class MenuBarState: ObservableObject {
 
     /// Install TouchBridge system components.
     ///
+    /// Patches BOTH sudo and screensaver PAM configs at install time. The
+    /// individual surface toggles are handled at runtime via surfaces.json
+    /// (no root needed). This is a one-time privileged operation.
+    ///
     /// Tries the privileged helper (SMAppService.daemon) first — this is the
     /// preferred path for properly signed (Developer ID) builds. If the helper
     /// cannot be registered (e.g. ad-hoc signed builds with no Team ID), falls
     /// back to `AdminInstaller` which uses an admin-privileged osascript dialog.
-    func installSystem(patchSudo: Bool = true, patchScreensaver: Bool = false, ignoreSSH: Bool = false) async {
+    func installSystem(ignoreSSH: Bool = false) async {
+        let patchSudo = true
+        let patchScreensaver = true
         isInstalling = true
         installMessage = nil
 
@@ -227,86 +264,23 @@ class MenuBarState: ObservableObject {
 
     /// Toggle a PAM surface (sudo or screensaver).
     ///
-    /// Uses the privileged helper if registered, otherwise falls back to
-    /// `AdminInstaller` (admin-privileged osascript dialog).
-    func togglePAMSurface(_ surface: String, enabled: Bool) async {
-        isInstalling = true
-        installMessage = nil
+    /// This is now a simple user-level file write to surfaces.json — no root
+    /// privileges needed. The PAM module reads this file on each invocation
+    /// and short-circuits (returns PAM_AUTH_ERR) if the surface is disabled.
+    ///
+    /// The PAM config line in /etc/pam.d/ is installed once at install time
+    /// and remains permanent. surfaces.json is the runtime toggle.
+    func togglePAMSurface(_ surface: String, enabled: Bool) {
+        // Read current config, update the requested surface, write back.
+        var surfaces = readSurfacesConfig()
+        surfaces[surface] = enabled
 
-        // Determine whether to use the privileged helper or the admin fallback
-        var useHelper = helperClient.isHelperRegistered
-        if !useHelper {
-            let (registered, _) = await helperClient.registerHelper()
-            useHelper = registered
-        }
-
-        if enabled {
-            guard let pamPath = BinaryLocator.bundledPAMPath else {
-                installMessage = "Bundled PAM module not found."
-                isInstalling = false
-                return
-            }
-            let daemonPath = BinaryLocator.bundledDaemonPath ?? ""
-            let (ok, msg): (Bool, String)
-            if useHelper {
-                (ok, msg) = await helperClient.install(
-                    daemonPath: daemonPath,
-                    pamModulePath: pamPath,
-                    patchSudo: surface == "sudo",
-                    patchScreensaver: surface == "screensaver",
-                    ignoreSSH: false
-                )
-            } else {
-                (ok, msg) = await AdminInstaller.install(
-                    daemonPath: daemonPath,
-                    pamModulePath: pamPath,
-                    patchSudo: surface == "sudo",
-                    patchScreensaver: surface == "screensaver",
-                    ignoreSSH: false
-                )
-            }
-            if !ok {
-                installMessage = "Failed: \(msg)"
-            }
-        } else {
-            // Uninstall just this surface — re-run with the opposite config.
-            // The uninstall removes everything, so we reinstall with the
-            // desired surfaces. This is simpler than per-surface removal.
-            let (ok, _): (Bool, String)
-            if useHelper {
-                (ok, _) = await helperClient.uninstall(removeBinary: false)
-            } else {
-                (ok, _) = await AdminInstaller.uninstall(removeBinary: false)
-            }
-            if ok {
-                // Re-patch only the surfaces that should remain
-                let wantSudo = surface == "sudo" ? false : sudoEnabled
-                let wantScreensaver = surface == "screensaver" ? false : screensaverEnabled
-                if wantSudo || wantScreensaver {
-                    guard let pamPath = BinaryLocator.bundledPAMPath else { return }
-                    if useHelper {
-                        _ = await helperClient.install(
-                            daemonPath: "",
-                            pamModulePath: pamPath,
-                            patchSudo: wantSudo,
-                            patchScreensaver: wantScreensaver,
-                            ignoreSSH: false
-                        )
-                    } else {
-                        _ = await AdminInstaller.install(
-                            daemonPath: "",
-                            pamModulePath: pamPath,
-                            patchSudo: wantSudo,
-                            patchScreensaver: wantScreensaver,
-                            ignoreSSH: false
-                        )
-                    }
-                }
-            }
-        }
+        // Write the full config (both surfaces) so we don't lose the other one.
+        let sudo = surfaces["sudo"] ?? true
+        let screensaver = surfaces["screensaver"] ?? true
+        writeSurfacesConfig(sudo: sudo, screensaver: screensaver)
 
         checkInstallation()
-        isInstalling = false
     }
 
     private func installLaunchAgentPlist() {

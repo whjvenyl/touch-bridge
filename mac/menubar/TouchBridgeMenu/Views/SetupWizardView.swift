@@ -102,7 +102,7 @@ struct SetupWizardView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
 
-            Text("Your admin password will be required. PAM configs are backed up before modification.")
+            Text("Your admin password is required once to install the PAM module. Surface toggles can be changed later without privileges.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -114,11 +114,11 @@ struct SetupWizardView: View {
     private var installButton: some View {
         Button {
             Task {
-                await state.installSystem(
-                    patchSudo: patchSudo,
-                    patchScreensaver: patchScreensaver,
-                    ignoreSSH: ignoreSSH
-                )
+                await state.installSystem(ignoreSSH: ignoreSSH)
+                // After install, apply the user's surface preferences via
+                // surfaces.json (no root needed — just a file write).
+                state.togglePAMSurface("sudo", enabled: patchSudo)
+                state.togglePAMSurface("screensaver", enabled: patchScreensaver)
             }
         } label: {
             Label("Install TouchBridge", systemImage: "arrow.down.circle.fill")

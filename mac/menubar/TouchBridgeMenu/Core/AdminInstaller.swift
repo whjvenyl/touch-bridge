@@ -51,7 +51,9 @@ enum AdminInstaller {
             commands.append("rm -f /usr/local/lib/pam/pam_touchbridge.so")
             commands.append("cp '\(shellEscape(pamModulePath))' /usr/local/lib/pam/pam_touchbridge.so")
             commands.append("chmod 444 /usr/local/lib/pam/pam_touchbridge.so")
-            // Ad-hoc sign the PAM module to silence AMFI warnings
+            // Ad-hoc sign the PAM module at its final location (after copy)
+            // so the code signature mtime matches the file mtime. Signing
+            // before copying causes a cs_mtime mismatch that AMFI rejects.
             commands.append("codesign -s - --force /usr/local/lib/pam/pam_touchbridge.so 2>/dev/null || true")
         }
 

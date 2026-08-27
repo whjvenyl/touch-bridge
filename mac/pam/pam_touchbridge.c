@@ -11,9 +11,17 @@
  * If TouchBridge fails (timeout, no device, etc.), PAM falls through to
  * the next module (typically password).
  *
+ * Surface enable/disable:
+ *   The menubar app writes ~/Library/Application Support/TouchBridge/surfaces.json
+ *   to toggle individual surfaces (sudo, screensaver) without touching /etc/pam.d/.
+ *   If the file is missing or the surface key is absent, the surface defaults to
+ *   enabled — so the PAM config line in /etc/pam.d/ is the real on/off switch,
+ *   and surfaces.json is a user-level override that can only disable, never enable.
+ *
  * Security notes:
  * - Never logs nonces, keys, or passwords
  * - Socket path derived from target user's home directory (not env vars)
+ * - surfaces.json read from the calling user's home (getpwuid(getuid()))
  * - Fixed-size buffers prevent overflow
  * - All socket fds closed on all code paths
  */
@@ -77,6 +85,90 @@ static int json_escape(const char *in, char *out, size_t outlen)
 
     out[i] = '\0';
     return (int)i;
+}
+
+/*
+ * Check if a TouchBridge surface (e.g. "sudo", "screensaver") is enabled
+ * in the calling user's surfaces.json config file.
+ *
+ * The file lives at:
+ *   ~/Library/Application Support/TouchBridge/surfaces.json
+ * and contains a simple JSON object like:
+ *   {"sudo": true, "screensaver": false}
+ *
+ * Returns 1 if the surface is enabled (or if the file/key is missing —
+ * defaulting to enabled), 0 if explicitly disabled.
+ *
+ * This lets the menubar app toggle surfaces on/off without ever touching
+ * /etc/pam.d/ — the PAM config line is installed once at install time,
+ * and surfaces.json is a user-level override that can only disable.
+ */
+static int surface_is_enabled(const char *service)
+{
+    char path[256];
+    char buf[512];
+    char key[64];
+    FILE *fp;
+    size_t nread;
+    char *found;
+
+    /* Get the calling user's home directory (not the target user).
+     * For sudo, getuid() returns the invoking user, not root. */
+    struct passwd *pw = getpwuid(getuid());
+    if (pw == NULL || pw->pw_dir == NULL) {
+        /* Can't determine home dir — default to enabled. */
+        return 1;
+    }
+
+    int ret = snprintf(path, sizeof(path),
+        "%s/Library/Application Support/TouchBridge/surfaces.json",
+        pw->pw_dir);
+    if (ret < 0 || (size_t)ret >= sizeof(path)) {
+        return 1; /* Path too long — default to enabled. */
+    }
+
+    fp = fopen(path, "r");
+    if (fp == NULL) {
+        /* No config file — default to enabled. */
+        return 1;
+    }
+
+    nread = fread(buf, 1, sizeof(buf) - 1, fp);
+    fclose(fp);
+
+    if (nread == 0) {
+        return 1; /* Empty file — default to enabled. */
+    }
+    buf[nread] = '\0';
+
+    /* Search for "service": false  (simple string search, no JSON parser).
+     * We look for the pattern "<service>": followed by optional whitespace
+     * and then "false". If found, the surface is disabled. */
+    ret = snprintf(key, sizeof(key), "\"%s\"", service);
+    if (ret < 0 || (size_t)ret >= sizeof(key)) {
+        return 1; /* Key too long — default to enabled. */
+    }
+
+    found = strstr(buf, key);
+    if (found == NULL) {
+        return 1; /* Surface not in config — default to enabled. */
+    }
+
+    /* Skip past the key, then skip whitespace and colon. */
+    found += strlen(key);
+    while (*found == ' ' || *found == '\t' || *found == ':') {
+        found++;
+    }
+    while (*found == ' ' || *found == '\t' || *found == '\n' || *found == '\r') {
+        found++;
+    }
+
+    /* Check if the value is "false". */
+    if (strncmp(found, "false", 5) == 0) {
+        return 0; /* Explicitly disabled. */
+    }
+
+    return 1; /* Enabled (true or any other value). */
 }
 
 /*
@@ -258,6 +350,17 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
     if (pam_get_item(pamh, PAM_SERVICE, (const void **)&service) != PAM_SUCCESS
         || service == NULL) {
         service = "unknown";
+    }
+
+    /* Check if this surface is enabled in the user's surfaces.json.
+     * If disabled, fall through to the next PAM module immediately —
+     * no socket connection, no BLE challenge, no phone prompt.
+     * This is the user-level toggle that avoids touching /etc/pam.d/. */
+    if (!surface_is_enabled(service)) {
+        syslog(LOG_AUTH | LOG_INFO,
+            "pam_touchbridge: surface '%s' disabled in surfaces.json — falling through for user=%s",
+            service, user);
+        return PAM_AUTH_ERR;
     }
 
     /* Parse timeout from module arguments */
