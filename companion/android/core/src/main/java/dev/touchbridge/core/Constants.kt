@@ -1,4 +1,4 @@
-package dev.touchbridge.android
+package dev.touchbridge.core
 
 import java.util.UUID
 

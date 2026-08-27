@@ -1,9 +1,9 @@
-package dev.touchbridge.android.core
+package dev.touchbridge.core
 
 import android.util.Log
-import dev.touchbridge.android.Constants
-import dev.touchbridge.android.proto.ChallengeIssued
-import dev.touchbridge.android.proto.ChallengeResponse
+import dev.touchbridge.core.Constants
+import dev.touchbridge.core.proto.ChallengeIssued
+import dev.touchbridge.core.proto.ChallengeResponse
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.spec.ECGenParameterSpec
@@ -26,8 +26,8 @@ import javax.crypto.spec.SecretKeySpec
  * producing output compatible with Apple's CryptoKit (same algorithms).
  */
 class ChallengeHandler(
-    private val keystoreManager: KeystoreManager,
-    private val bleClient: BLEClient,
+    @Suppress("unused") private val keystoreManager: KeystoreManager? = null,
+    @Suppress("unused") private val bleClient: BLEClient? = null,
 ) {
     companion object {
         private const val TAG = "ChallengeHandler"
@@ -52,6 +52,7 @@ class ChallengeHandler(
         val publicKeyBytes = if (encoded.size > 65) encoded.takeLast(65).toByteArray() else encoded
 
         Log.i(TAG, "Generated ECDH ephemeral key pair (${publicKeyBytes.size} bytes)")
+        cachedPublicKey = publicKeyBytes
         return publicKeyBytes
     }
 
@@ -152,6 +153,22 @@ class ChallengeHandler(
     }
 
     val isSessionReady: Boolean get() = sessionKey != null
+
+    /**
+     * Get the local ECDH public key (X9.62 uncompressed, 65 bytes).
+     * Available after initiateECDH(). Used for signing Identify.
+     */
+    fun getSessionPublicKey(): ByteArray {
+        val privKey = localECDHPrivateKey ?: throw IllegalStateException("ECDH not initiated")
+        // Regenerate the public key from the private key
+        val keyFactory = java.security.KeyFactory.getInstance("EC")
+        val ecSpec = java.security.spec.ECGenParameterSpec("secp256r1")
+        // We can't easily get the public key back from PrivateKey alone,
+        // so we store it during initiateECDH
+        return cachedPublicKey ?: throw IllegalStateException("Public key not cached")
+    }
+
+    private var cachedPublicKey: ByteArray? = null
 
     /**
      * HKDF-SHA256 key derivation (RFC 5869).

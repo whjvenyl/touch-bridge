@@ -3,6 +3,22 @@
 
     <uses-feature android:name="android.hardware.type.watch" />
 
+    <!-- BLE permissions -->
+    <uses-permission android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- Foreground service for persistent BLE while on-wrist -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
+    <!-- Vibration -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <application
         android:label="TouchBridge"
         android:theme="@android:style/Theme.DeviceDefault"
@@ -19,7 +35,13 @@
             </intent-filter>
         </activity>
 
-        <!-- Wearable Data Layer listener -->
+        <!-- Foreground service for persistent BLE connection while on-wrist -->
+        <service
+            android:name="dev.touchbridge.wear.TouchBridgeWearService"
+            android:foregroundServiceType="connectedDevice"
+            android:exported="false" />
+
+        <!-- Wearable Data Layer listener (relay fallback) -->
         <service
             android:name="dev.touchbridge.wear.ChallengeListenerService"
             android:exported="true">

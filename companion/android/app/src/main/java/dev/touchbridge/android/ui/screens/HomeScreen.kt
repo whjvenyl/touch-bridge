@@ -95,8 +95,8 @@ fun HomeScreen(
         }
 
         if (uiState.isScanning && !uiState.isConnected) {
-            val prefs = LocalContext.current.getSharedPreferences(dev.touchbridge.android.Constants.PREFS_NAME, android.content.Context.MODE_PRIVATE)
-            val macId = prefs.getString(dev.touchbridge.android.Constants.PREF_PAIRED_MAC_ID, "Default")
+            val prefs = LocalContext.current.getSharedPreferences(dev.touchbridge.core.Constants.PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            val macId = prefs.getString(dev.touchbridge.core.Constants.PREF_PAIRED_MAC_ID, "Default")
             Text(
                 text = "Looking for: ${macId?.take(8)}...",
                 fontSize = 10.sp,

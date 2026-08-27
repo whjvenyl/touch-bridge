@@ -5,12 +5,12 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import dev.touchbridge.android.Constants
-import dev.touchbridge.android.core.BLEClient
-import dev.touchbridge.android.core.ChallengeData
-import dev.touchbridge.android.core.ChallengeHandler
-import dev.touchbridge.android.core.KeystoreManager
-import dev.touchbridge.android.core.WireFormat
+import dev.touchbridge.core.Constants
+import dev.touchbridge.core.BLEClient
+import dev.touchbridge.core.ChallengeData
+import dev.touchbridge.core.ChallengeHandler
+import dev.touchbridge.core.KeystoreManager
+import dev.touchbridge.core.WireFormat
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -49,7 +49,7 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
 
     val keystoreManager = KeystoreManager()
     val bleClient = BLEClient(context)
-    val challengeHandler = ChallengeHandler(keystoreManager, bleClient)
+    val challengeHandler = ChallengeHandler(keystoreManager)
 
     init {
         bleClient.listener = this
@@ -128,7 +128,7 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
             keystoreManager.getPublicKey(Constants.SIGNING_KEY_ALIAS)
         } catch (e: Exception) { null }
         if (publicKey != null) {
-            pendingPairRequest = dev.touchbridge.android.core.WireFormat.buildPairRequest(
+            pendingPairRequest = dev.touchbridge.core.WireFormat.buildPairRequest(
                 deviceName = android.os.Build.MODEL,
                 publicKey = publicKey,
                 deviceID = deviceID,
@@ -296,11 +296,11 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
                 val signature = keystoreManager.sign(signedMessage, Constants.SIGNING_KEY_ALIAS)
 
                 // Build the Identify protobuf, encrypt with session key, add wire header.
-                val msg = dev.touchbridge.android.proto.Identify.newBuilder()
+                val msg = dev.touchbridge.core.proto.Identify.newBuilder()
                     .setDeviceId(deviceID)
                     .setDeviceName(deviceName)
                     .setSignature(com.google.protobuf.ByteString.copyFrom(signature))
-                    .setDeviceType(dev.touchbridge.android.proto.DeviceType.PHONE)
+                    .setDeviceType(dev.touchbridge.core.proto.DeviceType.PHONE)
                     .build()
                 val encrypted = challengeHandler.encrypt(msg.toByteArray())
                 val framed = WireFormat.encode(WireFormat.TYPE_IDENTIFY, encrypted)
@@ -328,7 +328,7 @@ class TouchBridgeViewModel(private val context: Context) : ViewModel(), BLEClien
         try {
             // Strip wire format header [version][type] before parsing
             val payload = if (data.size > 2) data.copyOfRange(2, data.size) else data
-            val response = dev.touchbridge.android.proto.PairResponse.parseFrom(payload)
+            val response = dev.touchbridge.core.proto.PairResponse.parseFrom(payload)
             if (response.accepted) {
                 val macId = response.deviceId.ifEmpty { deviceAddress }
                 completePairing("Mac", macId)

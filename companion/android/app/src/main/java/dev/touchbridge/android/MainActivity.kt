@@ -28,6 +28,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.fragment.app.FragmentActivity
 import dev.touchbridge.android.ui.screens.*
 import dev.touchbridge.android.ui.theme.TouchBridgeTheme
+import dev.touchbridge.core.Constants
 import kotlinx.coroutines.flow.collectLatest
 
 class MainActivity : FragmentActivity() {

@@ -1,4 +1,4 @@
-package dev.touchbridge.android.core
+package dev.touchbridge.core
 
 import android.annotation.SuppressLint
 import android.bluetooth.*
@@ -6,7 +6,7 @@ import android.bluetooth.le.*
 import android.content.Context
 import android.os.ParcelUuid
 import android.util.Log
-import dev.touchbridge.android.Constants
+import dev.touchbridge.core.Constants
 
 /**
  * BLE GATT client for Android.
@@ -252,7 +252,7 @@ class BLEClient(private val context: Context) {
         deviceID: String,
         deviceName: String,
         signature: ByteArray,
-        deviceType: dev.touchbridge.android.proto.DeviceType = dev.touchbridge.android.proto.DeviceType.PHONE
+        deviceType: dev.touchbridge.core.proto.DeviceType = dev.touchbridge.core.proto.DeviceType.PHONE
     ): Boolean {
         val char = pairingChar ?: return false
         val g = gatt ?: return false

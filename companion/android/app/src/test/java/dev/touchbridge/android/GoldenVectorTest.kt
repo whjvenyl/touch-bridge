@@ -1,7 +1,7 @@
 package dev.touchbridge.android
 
-import dev.touchbridge.android.core.WireFormat
-import dev.touchbridge.android.proto.*
+import dev.touchbridge.core.WireFormat
+import dev.touchbridge.core.proto.*
 import com.google.protobuf.ByteString
 import org.json.JSONArray
 import org.junit.Test
@@ -138,7 +138,7 @@ class GoldenVectorTest {
             .setDeviceId("device-xyz")
             .setDeviceName("Pixel Watch")
             .setSignature(com.google.protobuf.ByteString.copyFrom(signature))
-            .setDeviceType(dev.touchbridge.android.proto.DeviceType.PHONE)
+            .setDeviceType(dev.touchbridge.core.proto.DeviceType.PHONE)
             .build()
         val encoded = WireFormat.encode(WireFormat.TYPE_IDENTIFY, msg.toByteArray())
 

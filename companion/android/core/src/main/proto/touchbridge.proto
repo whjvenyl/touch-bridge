@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package touchbridge;
 
-option java_package = "dev.touchbridge.android.proto";
+option java_package = "dev.touchbridge.core.proto";
 option java_multiple_files = true;
 option swift_prefix = "TB";
 

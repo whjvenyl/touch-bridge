@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.protobuf")
 }
 
 android {
@@ -32,23 +31,10 @@ android {
     }
 }
 
-// Protobuf code generation — generates Java + Kotlin from .proto files at build time.
-// Proto files live in app/src/main/proto/
-protobuf {
-    protoc {
-        artifact = "com.google.protobuf:protoc:4.31.1"
-    }
-    generateProtoTasks {
-        all().forEach { task ->
-            task.builtins {
-                create("java")
-                create("kotlin")
-            }
-        }
-    }
-}
-
 dependencies {
+    // Shared core (BLE, crypto, protocol, constants)
+    implementation(project(":core"))
+
     // Compose
     implementation(platform("androidx.compose:compose-bom:2026.08.00"))
     implementation("androidx.compose.ui:ui")

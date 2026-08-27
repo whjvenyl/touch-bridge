@@ -1,4 +1,4 @@
-package dev.touchbridge.android.core
+package dev.touchbridge.core
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties

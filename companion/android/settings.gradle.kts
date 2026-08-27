@@ -15,5 +15,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "TouchBridge"
+include(":core")
 include(":app")
 include(":wear")

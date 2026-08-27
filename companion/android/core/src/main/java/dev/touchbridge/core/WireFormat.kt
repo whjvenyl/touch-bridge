@@ -1,14 +1,14 @@
-package dev.touchbridge.android.core
+package dev.touchbridge.core
 
-import dev.touchbridge.android.Constants
-import dev.touchbridge.android.proto.ChallengeIssued
-import dev.touchbridge.android.proto.ChallengeResponse
-import dev.touchbridge.android.proto.Error
-import dev.touchbridge.android.proto.Identify
-import dev.touchbridge.android.proto.PairRequest
-import dev.touchbridge.android.proto.DeviceType
-import dev.touchbridge.android.proto.DeviceCapabilities
-import dev.touchbridge.android.proto.PairResponse
+import dev.touchbridge.core.Constants
+import dev.touchbridge.core.proto.ChallengeIssued
+import dev.touchbridge.core.proto.ChallengeResponse
+import dev.touchbridge.core.proto.Error
+import dev.touchbridge.core.proto.Identify
+import dev.touchbridge.core.proto.PairRequest
+import dev.touchbridge.core.proto.DeviceType
+import dev.touchbridge.core.proto.DeviceCapabilities
+import dev.touchbridge.core.proto.PairResponse
 import com.google.protobuf.ByteString
 
 /// Handles encoding and decoding of TouchBridge wire messages using protobuf.
