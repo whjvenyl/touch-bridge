@@ -114,8 +114,11 @@ message Identify {
                                 //     Do NOT pre-hash — that would cause a double-hash mismatch.
                                 //     iOS: SecKeyCreateSignature(.ecdsaSignatureMessageX962SHA256)
                                 //     Android: Signature.getInstance("SHA256withECDSA")
-                                //   - Signature encoding: X9.63 raw format (r || s, 64 bytes for P-256).
-                                //     Android's SHA256withECDSA produces DER; convert to raw r||s before sending.
+                                //   - Signature encoding: ASN.1 DER (SEQUENCE { INTEGER r, INTEGER s }).
+                                //     Both Apple's .ecdsaSignatureMessageX962SHA256 and Android's
+                                //     SHA256withECDSA produce DER — no conversion needed.
+                                //     "X962" in the Apple API name refers to ANSI X9.62 (ECDSA),
+                                //     which specifies DER encoding, NOT raw r||s.
   DeviceType device_type = 4;   // Refresh device type on reconnect (may change after OS update)
 }
 
