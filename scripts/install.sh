@@ -181,8 +181,11 @@ PLIST
 chown "$ACTUAL_USER" "$LAUNCH_AGENT_PLIST"
 chmod 644 "$LAUNCH_AGENT_PLIST"
 
-# Load the agent
-launchctl bootstrap "gui/$ACTUAL_UID" "$LAUNCH_AGENT_PLIST" 2>/dev/null || true
+# Load the agent.
+# Redirect all fds so the daemon doesn't inherit the shell's stdout/stderr,
+# which would keep the terminal session alive and cause a "killed" message.
+launchctl bootstrap "gui/$ACTUAL_UID" "$LAUNCH_AGENT_PLIST" \
+    < /dev/null > /dev/null 2>&1 || true
 info "LaunchAgent installed and loaded."
 
 # --- Verification ---
